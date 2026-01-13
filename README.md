@@ -43,38 +43,56 @@ Memory Bank 通过一组结构化的 Markdown 文件来持久化项目上下文�
 
 ## 安装方法
 
-### 步骤一：复制 Skill 文件
-
-#### 全局安装（推荐）
-
-在所有项目中生效，一次配置永久可用。
+### 一键安装
 
 ```bash
-# 创建全局 skill 目录
-mkdir -p ~/.claude/skills/memory-bank
+bunx memory-bank-skill install
+```
 
-# 复制 skill 文件（包括 references 子目录）
+然后**重启 OpenCode**，完成！
+
+**验证安装**：
+```bash
+bunx memory-bank-skill doctor
+```
+
+---
+
+### 安装做了什么？
+
+| 操作 | 目标路径 |
+|------|----------|
+| 复制 Skill 文件 | `~/.claude/skills/memory-bank/` |
+| 复制 Plugin 文件 | `~/.config/opencode/plugin/memory-bank.ts` |
+| 配置 opencode.json | 添加 `permission.skill` 和插件注册 |
+| 配置 CLAUDE.md | 添加启动指令 |
+| 安装依赖 | `~/.config/opencode/node_modules/` |
+
+---
+
+### 手动安装（不推荐）
+
+<details>
+<summary>点击展开手动安装步骤</summary>
+
+#### 步骤一：复制 Skill 文件
+
+**全局安装**：
+
+```bash
+mkdir -p ~/.claude/skills/memory-bank
 cp -r /path/to/memory-bank-skill/skill/memory-bank/* ~/.claude/skills/memory-bank/
 ```
 
-#### 项目级安装
-
-只在当前项目生效，适合团队协作（可以一起提交到 Git）。
+**项目级安装**：
 
 ```bash
-# 进入你的项目目录
 cd /path/to/your-project
-
-# 创建 skill 目录
 mkdir -p .claude/skills/memory-bank
-
-# 复制 skill 文件
 cp -r /path/to/memory-bank-skill/skill/memory-bank/* .claude/skills/memory-bank/
 ```
 
-> ⚠️ **注意**：skill 目录是 `.claude/skills/`，不是 `.opencode/skill/`
-
-### 步骤二：启用 Skill 权限（关键步骤）
+#### 步骤二：启用 Skill 权限
 
 > ⚠️ **重要**：OpenCode 默认不启用 skill 功能，必须在配置中显式开启。
 
@@ -143,7 +161,7 @@ opencode debug skill
 写入前输出计划，等待用户确认。详细规则见 `.claude/skills/memory-bank/SKILL.md`。
 ```
 
-### 步骤四：验证安装
+#### 步骤四：验证安装
 
 ```bash
 # 在项目目录下运行
@@ -161,16 +179,18 @@ opencode debug skill
 ]
 ```
 
-### 为什么需要三步？
+#### 为什么需要这些步骤？
 
 | 组件 | 作用 |
 |------|------|
 | `SKILL.md` | 定义完整的 Memory Bank 规则（文件结构、写入格式、冲突处理等） |
 | `permission.skill` | 让 OpenCode 识别并加载 skill（**不配置 = skill 不可用**） |
 | `CLAUDE.md` 配置 | 让 AI 在每轮对话开始时**主动检查和加载** Memory Bank |
+| `memory-bank.ts` 插件 | 自动注入上下文 + 文件修改后提醒更新 |
 
 只装 Skill 不配置权限 = OpenCode 根本不知道有这个 skill。
 只装 Skill + 权限，不配置 CLAUDE.md = AI 知道有这个能力，但不会主动使用。
+不装 Plugin = 没有自动提醒功能，AI 可能忘记更新 Memory Bank。
 
 ---
 
@@ -727,6 +747,42 @@ Memory Bank 的所有文件都是 Markdown，建议：
 
 ## 常见问题
 
+### Q: 安装后文件更新时没有收到系统提醒？
+
+这是最常见的问题。**根本原因通常是只执行了 `npm install -g` 或 `npm link`，但没有执行 `memory-bank-skill install`**。
+
+| 命令 | 作用 |
+|------|------|
+| `npm install -g memory-bank-skill` | 只安装 CLI 工具本身 |
+| `memory-bank-skill install` | 安装 Skill、Plugin、配置文件（**必须执行！**） |
+
+**排查步骤**：
+
+```bash
+# 1. 检查安装状态
+memory-bank-skill doctor
+
+# 2. 如果有任何 ✗ 项，执行安装
+memory-bank-skill install
+
+# 3. 安装插件依赖
+cd ~/.config/opencode && bun install
+
+# 4. 重启 OpenCode
+```
+
+**验证插件是否加载**：
+
+```bash
+# 启用 DEBUG 模式查看插件日志
+MEMORY_BANK_DEBUG=1 opencode --print-logs
+```
+
+启动时应该看到：
+```
+service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
+```
+
 ### Q: Skill 没有被识别怎么办？
 
 最常见的原因是**没有配置 `permission.skill`**。检查步骤：
@@ -801,8 +857,10 @@ AI 检测到疑似敏感内容时会拒绝写入。
 
 ## 版本信息
 
-- **版本**: 3.1
+- **版本**: 4.0.0
 - **主要更新**:
+  - **一键安装 CLI**：`memory-bank-skill install` 自动完成所有配置
+  - **安装诊断**：`memory-bank-skill doctor` 快速排查安装问题
   - **统一插件**：将 `memory-bank-loader.ts` 和 `memory-bank-reminder.ts` 合并为单一 `memory-bank.ts`
   - **必须显式注册**：在 `opencode.json` 的 `plugin` 数组中添加插件路径，否则 Desktop App 不加载
   - OpenCode 插件系统：真正的自动读写，不再依赖 AI 主动遵循规则

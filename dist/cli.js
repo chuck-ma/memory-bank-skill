@@ -1,5 +1,22 @@
 #!/usr/bin/env bun
 // @bun
+var __create = Object.create;
+var __getProtoOf = Object.getPrototypeOf;
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __toESM = (mod, isNodeMode, target) => {
+  target = mod != null ? __create(__getProtoOf(mod)) : {};
+  const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
+  for (let key of __getOwnPropNames(mod))
+    if (!__hasOwnProp.call(to, key))
+      __defProp(to, key, {
+        get: () => mod[key],
+        enumerable: true
+      });
+  return to;
+};
+var __require = import.meta.require;
 
 // src/cli.ts
 import { promises as fs } from "fs";
@@ -313,6 +330,24 @@ async function writeManifest(manifestFiles, undoStack) {
   await atomicWriteFile(manifestPath, JSON.stringify(manifest, null, 2) + `
 `, undoStack);
 }
+async function runBunInstall() {
+  const opencodeDir = join(homedir(), ".config", "opencode");
+  const nodeModulesPath = join(opencodeDir, "node_modules", "@opencode-ai", "plugin");
+  if (await exists(nodeModulesPath)) {
+    return true;
+  }
+  try {
+    const { execSync } = await import("child_process");
+    execSync("bun install", {
+      cwd: opencodeDir,
+      stdio: "pipe",
+      timeout: 60000
+    });
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
 async function install() {
   log(`
 ${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}
@@ -322,39 +357,44 @@ ${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}
   const manifestFiles = [];
   const results = [];
   try {
-    logStep(1, 5, "Installing skill files...");
+    logStep(1, 6, "Installing skill files...");
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles);
     logDetail(r1.details || "");
     results.push(r1);
-    logStep(2, 5, "Installing plugin...");
+    logStep(2, 6, "Installing plugin...");
     const r2 = await installPluginFile(packageRoot, undoStack, manifestFiles);
     logDetail(r2.details || "");
     results.push(r2);
-    logStep(3, 5, "Configuring opencode.json...");
+    logStep(3, 6, "Configuring opencode.json...");
     const r3 = await configureOpencodeJson(undoStack);
     logDetail(r3.details || "");
     results.push(r3);
-    logStep(4, 5, "Configuring CLAUDE.md...");
+    logStep(4, 6, "Configuring CLAUDE.md...");
     const r4 = await configureClaudeMd(undoStack);
     logDetail(r4.details || "");
     results.push(r4);
-    logStep(5, 5, "Ensuring plugin dependencies...");
+    logStep(5, 6, "Ensuring plugin dependencies...");
     const r5 = await ensurePluginDependencies(undoStack);
     logDetail(r5.details || "");
     results.push(r5);
+    logStep(6, 6, "Installing dependencies...");
+    const bunSuccess = await runBunInstall();
+    if (bunSuccess) {
+      logDetail("Dependencies ready");
+    } else {
+      logDetail(`${colors.yellow}Run manually: cd ~/.config/opencode && bun install${colors.reset}`);
+    }
     await writeManifest(manifestFiles, undoStack);
     await cleanupBackups(undoStack);
     const allSkipped = results.every((r) => r.status === "already-configured" || r.status === "skipped");
     log("");
-    if (allSkipped) {
+    if (allSkipped && bunSuccess) {
       logSuccess(`Already installed (v${VERSION})`);
     } else {
       logSuccess("Installation complete!");
-      log("");
-      log(`${colors.bold}Next steps:${colors.reset}`);
-      log(`  1. Run: ${colors.cyan}cd ~/.config/opencode && bun install${colors.reset}`);
-      log(`  2. Restart OpenCode`);
     }
+    log("");
+    log(`${colors.bold}Next step:${colors.reset} Restart OpenCode`);
     log("");
   } catch (err) {
     await rollback(undoStack);

@@ -470,6 +470,28 @@ async function writeManifest(
 // Main Commands
 // ============================================================================
 
+async function runBunInstall(): Promise<boolean> {
+  const opencodeDir = join(homedir(), ".config", "opencode")
+  const nodeModulesPath = join(opencodeDir, "node_modules", "@opencode-ai", "plugin")
+  
+  // Check if dependencies already installed
+  if (await exists(nodeModulesPath)) {
+    return true // Already installed
+  }
+  
+  try {
+    const { execSync } = await import("node:child_process")
+    execSync("bun install", {
+      cwd: opencodeDir,
+      stdio: "pipe",
+      timeout: 60000,
+    })
+    return true
+  } catch (err) {
+    return false
+  }
+}
+
 async function install(): Promise<void> {
   log(`\n${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}\n`)
 
@@ -480,34 +502,43 @@ async function install(): Promise<void> {
 
   try {
     // Step 1: Install skill files
-    logStep(1, 5, "Installing skill files...")
+    logStep(1, 6, "Installing skill files...")
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles)
     logDetail(r1.details || "")
     results.push(r1)
 
     // Step 2: Install plugin
-    logStep(2, 5, "Installing plugin...")
+    logStep(2, 6, "Installing plugin...")
     const r2 = await installPluginFile(packageRoot, undoStack, manifestFiles)
     logDetail(r2.details || "")
     results.push(r2)
 
     // Step 3: Configure opencode.json
-    logStep(3, 5, "Configuring opencode.json...")
+    logStep(3, 6, "Configuring opencode.json...")
     const r3 = await configureOpencodeJson(undoStack)
     logDetail(r3.details || "")
     results.push(r3)
 
     // Step 4: Configure CLAUDE.md
-    logStep(4, 5, "Configuring CLAUDE.md...")
+    logStep(4, 6, "Configuring CLAUDE.md...")
     const r4 = await configureClaudeMd(undoStack)
     logDetail(r4.details || "")
     results.push(r4)
 
     // Step 5: Ensure plugin dependencies
-    logStep(5, 5, "Ensuring plugin dependencies...")
+    logStep(5, 6, "Ensuring plugin dependencies...")
     const r5 = await ensurePluginDependencies(undoStack)
     logDetail(r5.details || "")
     results.push(r5)
+
+    // Step 6: Run bun install
+    logStep(6, 6, "Installing dependencies...")
+    const bunSuccess = await runBunInstall()
+    if (bunSuccess) {
+      logDetail("Dependencies ready")
+    } else {
+      logDetail(`${colors.yellow}Run manually: cd ~/.config/opencode && bun install${colors.reset}`)
+    }
 
     // Write manifest
     await writeManifest(manifestFiles, undoStack)
@@ -519,15 +550,13 @@ async function install(): Promise<void> {
     const allSkipped = results.every((r) => r.status === "already-configured" || r.status === "skipped")
 
     log("")
-    if (allSkipped) {
+    if (allSkipped && bunSuccess) {
       logSuccess(`Already installed (v${VERSION})`)
     } else {
       logSuccess("Installation complete!")
-      log("")
-      log(`${colors.bold}Next steps:${colors.reset}`)
-      log(`  1. Run: ${colors.cyan}cd ~/.config/opencode && bun install${colors.reset}`)
-      log(`  2. Restart OpenCode`)
     }
+    log("")
+    log(`${colors.bold}Next step:${colors.reset} Restart OpenCode`)
     log("")
   } catch (err) {
     await rollback(undoStack)
