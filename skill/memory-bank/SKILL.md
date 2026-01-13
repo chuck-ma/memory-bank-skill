@@ -183,6 +183,64 @@ memory-bank/
 
 ---
 
+## 自动提交模式
+
+当用户回复"更新并提交"或"初始化并提交"时，执行以下流程：
+
+### Preflight 检查（必须全部通过）
+
+执行以下检查，任一失败则中止并解释原因：
+
+1. **确认是 git 仓库**：`git rev-parse --is-inside-work-tree`
+2. **确认不在 merge/rebase/cherry-pick 中**：
+   - `git rev-parse --git-path MERGE_HEAD` 返回的文件不存在
+   - `git rev-parse --git-path rebase-merge` 返回的目录不存在
+   - `git rev-parse --git-path rebase-apply` 返回的目录不存在
+   - `git rev-parse --git-path CHERRY_PICK_HEAD` 返回的文件不存在
+3. **确认无冲突文件**：`git diff --name-only --diff-filter=U` 必须为空
+4. **确认有 git 身份**：`git config user.name` 和 `git config user.email` 非空
+5. **确认有变更可提交**：`git status --porcelain` 非空
+
+### 执行流程
+
+1. **输出计划**，包含：
+   - 将要更新的 memory-bank 文件
+   - 将要提交的所有变更（`git status --porcelain`）
+   - **风险检查提醒**：确认没有 `.env`、凭证、大文件会被提交
+   - 如果已有 staged 变更，明确告知"将包含已 staged 的文件"
+
+2. **等待用户确认**
+
+3. **执行更新**：
+   - 写入 memory-bank 文件
+   - 执行 `git add -A`
+   - 执行 `git diff --cached --name-only` 显示将提交的文件
+   - 执行 `git commit -m "chore(memory-bank): update <files>"`
+
+### Commit Message 格式
+
+```
+chore(memory-bank): update active.md
+
+Auto-committed by Memory Bank.
+```
+
+多文件时：
+```
+chore(memory-bank): update memory bank
+
+Files updated:
+- memory-bank/active.md
+- memory-bank/_index.md
+```
+
+### 失败处理
+
+- **Preflight 失败**：不执行任何操作，解释原因和修复方法
+- **Commit 失败**（如 hook 拒绝）：报告错误，memory-bank 文件已写入但未提交，用户手动处理
+
+---
+
 ## 安全护栏
 
 ### 禁止写入

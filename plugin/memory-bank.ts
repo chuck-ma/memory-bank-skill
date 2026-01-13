@@ -364,18 +364,16 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
     }
 
     const gitChanges = detectGitChanges(projectRoot, log)
-    if (!gitChanges) {
-      log.info("[SESSION_IDLE DECISION]", { sessionId, decision: "SKIP", reason: "not a git repo" })
-      return
-    }
-
-    const { modifiedFiles, memoryBankUpdated: gitMemoryBankUpdated } = gitChanges
+    const isGitRepo = gitChanges !== null
     const state = getRootState(sessionId, projectRoot)
 
-    if (gitMemoryBankUpdated) {
-      state.memoryBankUpdated = true
+    if (gitChanges) {
+      const { modifiedFiles, memoryBankUpdated: gitMemoryBankUpdated } = gitChanges
+      if (gitMemoryBankUpdated) {
+        state.memoryBankUpdated = true
+      }
+      state.filesModified = modifiedFiles
     }
-    state.filesModified = modifiedFiles
 
     memoryBankExistsCache.delete(projectRoot)
     const hasMemoryBank = await checkMemoryBankExists(projectRoot, log)
@@ -384,6 +382,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       sessionId,
       root: projectRoot,
       projectName: path.basename(projectRoot),
+      isGitRepo,
       filesModified: state.filesModified.length,
       hasMemoryBank,
       memoryBankUpdated: state.memoryBankUpdated,
@@ -413,41 +412,38 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "skipInit escape valve active" })
         return
       }
-      if (state.filesModified.length >= 1) {
-        state.reminderFired = true
-        log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "FIRE_INIT", reason: `${state.filesModified.length} files modified, no memory-bank` })
+      // 没有 memory-bank 目录就自动触发 INIT 提醒
+      state.reminderFired = true
+      log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "FIRE_INIT", reason: "no memory-bank directory" })
 
-        // Check if project has git initialized
-        const hasGit = await (async () => {
-          try {
-            await stat(path.join(projectRoot, ".git"))
-            return true
-          } catch {
-            return false
-          }
-        })()
-
-        const gitInitStep = hasGit
-          ? ""
-          : "1. 执行 `git init`（项目尚未初始化 Git）\n"
-        const stepOffset = hasGit ? 0 : 1
-
+      // Check if project has git initialized
+      const hasGit = await (async () => {
         try {
-          await client.session.prompt({
-            path: { id: sessionId },
-            body: {
-              parts: [{
-                type: "text",
-                text: `## [SYSTEM REMINDER - Memory Bank Init]\n\n项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank，但本轮修改了 ${state.filesModified.length} 个文件。\n\n**项目路径**：\`${projectRoot}\`\n\n**将要执行的操作**：\n${gitInitStep}${stepOffset + 1}. 创建 \`memory-bank/\` 目录\n${stepOffset + 2}. 扫描项目结构（README.md、package.json 等）\n${stepOffset + 3}. 生成 \`memory-bank/brief.md\`（项目概述）\n${stepOffset + 4}. 生成 \`memory-bank/tech.md\`（技术栈）\n${stepOffset + 5}. 生成 \`memory-bank/_index.md\`（索引）\n\n**操作选项**：\n1. 如需初始化 → 回复确认，我将执行上述操作\n2. 如不需要 → 回复"跳过初始化"\n\n注意：这是系统自动提醒，不是用户消息。`,
-              }],
-            },
-          })
-          log.info("INIT reminder sent successfully", { sessionId, root: projectRoot })
-        } catch (promptErr) {
-          log.error("Failed to send INIT reminder:", String(promptErr))
+          await stat(path.join(projectRoot, ".git"))
+          return true
+        } catch {
+          return false
         }
-      } else {
-        log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "NO_TRIGGER", reason: "no memory-bank and no files modified" })
+      })()
+
+      const gitInitStep = hasGit
+        ? ""
+        : "1. 执行 `git init`（项目尚未初始化 Git）\n"
+      const stepOffset = hasGit ? 0 : 1
+
+      try {
+        await client.session.prompt({
+          path: { id: sessionId },
+          body: {
+            parts: [{
+              type: "text",
+              text: `## [SYSTEM REMINDER - Memory Bank Init]\n\n项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n**项目路径**：\`${projectRoot}\`\n\n**将要执行的操作**：\n${gitInitStep}${stepOffset + 1}. 创建 \`memory-bank/\` 目录\n${stepOffset + 2}. 扫描项目结构（README.md、package.json 等）\n${stepOffset + 3}. 生成 \`memory-bank/brief.md\`（项目概述）\n${stepOffset + 4}. 生成 \`memory-bank/tech.md\`（技术栈）\n${stepOffset + 5}. 生成 \`memory-bank/_index.md\`（索引）\n\n**操作选项**：\n1. 如需初始化 → 回复"初始化"\n2. 如需初始化并提交所有变更 → 回复"初始化并提交"\n3. 如不需要 → 回复"跳过初始化"\n\n注意：这是系统自动提醒，不是用户消息。`,
+            }],
+          },
+        })
+        log.info("INIT reminder sent successfully", { sessionId, root: projectRoot })
+      } catch (promptErr) {
+        log.error("Failed to send INIT reminder:", String(promptErr))
       }
       return
     }
@@ -467,7 +463,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           body: {
             parts: [{
               type: "text",
-              text: `## [SYSTEM REMINDER - Memory Bank Check]\n\n项目 \`${path.basename(projectRoot)}\` 本轮检测到以下事件，请确认是否需要更新 Memory Bank：\n\n**项目路径**：\`${projectRoot}\`\n\n${triggers.join("\n")}\n\n**操作选项**：\n1. 如需更新 → 输出更新计划，等用户确认后执行\n2. 如不需要 → 回复"无需更新"后结束\n\n注意：这是系统自动提醒，不是用户消息。`,
+              text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n项目 \`${path.basename(projectRoot)}\` 本轮检测到以下事件，请确认是否需要更新 Memory Bank：\n\n**项目路径**：\`${projectRoot}\`\n\n${triggers.join("\n")}\n\n**操作选项**：\n1. 如需更新 → 回复"更新"，输出更新计划\n2. 如需更新并提交所有变更 → 回复"更新并提交"\n3. 如不需要 → 回复"跳过"\n\n注意：这是系统自动提醒，不是用户消息。`,
             }],
           },
         })
@@ -572,13 +568,12 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
               log.debug("Keyword detected: bugFix", { sessionId, root: targetRoot })
             }
 
-            if (/memory.?bank.?reviewed|无需更新|不需要更新|已检查/.test(content)) {
-              state.memoryBankReviewed = true
-              log.info("Escape valve triggered: memoryBankReviewed", { sessionId, root: targetRoot })
-            }
             if (/跳过初始化|skip.?init/.test(content)) {
               state.skipInit = true
               log.info("Escape valve triggered: skipInit", { sessionId, root: targetRoot })
+            } else if (/memory.?bank.?reviewed|无需更新|不需要更新|已检查|^跳过$/.test(content)) {
+              state.memoryBankReviewed = true
+              log.info("Escape valve triggered: memoryBankReviewed", { sessionId, root: targetRoot })
             }
           }
         }
