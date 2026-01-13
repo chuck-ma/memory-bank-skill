@@ -39,10 +39,11 @@ interface RootState {
   hasNewRequirement: boolean
   hasTechDecision: boolean
   hasBugFix: boolean
-  memoryBankUpdated: boolean
-  reminderFired: boolean
   memoryBankReviewed: boolean
   skipInit: boolean
+  initReminderFired: boolean
+  lastUpdateReminderSignature?: string
+  lastSyncedTriggerSignature?: string
 }
 
 interface SessionMeta {
@@ -215,10 +216,11 @@ function getRootState(sessionId: string, root: string): RootState {
       hasNewRequirement: false,
       hasTechDecision: false,
       hasBugFix: false,
-      memoryBankUpdated: false,
-      reminderFired: false,
       memoryBankReviewed: false,
       skipInit: false,
+      initReminderFired: false,
+      lastUpdateReminderSignature: undefined,
+      lastSyncedTriggerSignature: undefined,
     }
     rootStates.set(key, state)
   }
@@ -265,6 +267,17 @@ const MEMORY_BANK_PATTERN = /^memory-bank\//
 
 function isDisabled(): boolean {
   return process.env.MEMORY_BANK_DISABLED === "1" || process.env.MEMORY_BANK_DISABLED === "true"
+}
+
+function computeTriggerSignature(state: RootState): string {
+  return JSON.stringify({
+    files: [...state.filesModified].sort(),
+    flags: {
+      hasNewRequirement: state.hasNewRequirement,
+      hasTechDecision: state.hasTechDecision,
+      hasBugFix: state.hasBugFix,
+    }
+  })
 }
 
 // ============================================================================
@@ -369,15 +382,16 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
     if (gitChanges) {
       const { modifiedFiles, memoryBankUpdated: gitMemoryBankUpdated } = gitChanges
-      if (gitMemoryBankUpdated) {
-        state.memoryBankUpdated = true
-      }
       state.filesModified = modifiedFiles
+      if (gitMemoryBankUpdated) {
+        state.lastSyncedTriggerSignature = computeTriggerSignature(state)
+      }
     }
 
     memoryBankExistsCache.delete(projectRoot)
     const hasMemoryBank = await checkMemoryBankExists(projectRoot, log)
 
+    const triggerSignature = computeTriggerSignature(state)
     const decisionContext = {
       sessionId,
       root: projectRoot,
@@ -385,8 +399,10 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       isGitRepo,
       filesModified: state.filesModified.length,
       hasMemoryBank,
-      memoryBankUpdated: state.memoryBankUpdated,
-      reminderFired: state.reminderFired,
+      initReminderFired: state.initReminderFired,
+      lastUpdateReminderSignature: state.lastUpdateReminderSignature,
+      lastSyncedTriggerSignature: state.lastSyncedTriggerSignature,
+      triggerSignature,
       memoryBankReviewed: state.memoryBankReviewed,
       skipInit: state.skipInit,
       hasNewRequirement: state.hasNewRequirement,
@@ -394,16 +410,8 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       hasBugFix: state.hasBugFix,
     }
 
-    if (state.memoryBankUpdated) {
-      log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "memoryBankUpdated is true" })
-      return
-    }
     if (state.memoryBankReviewed) {
       log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "memoryBankReviewed escape valve active" })
-      return
-    }
-    if (state.reminderFired) {
-      log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "reminderFired already true" })
       return
     }
 
@@ -412,11 +420,14 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "skipInit escape valve active" })
         return
       }
-      // 没有 memory-bank 目录就自动触发 INIT 提醒
-      state.reminderFired = true
+      if (state.initReminderFired) {
+        log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "initReminderFired already true" })
+        return
+      }
+
+      state.initReminderFired = true
       log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "FIRE_INIT", reason: "no memory-bank directory" })
 
-      // Check if project has git initialized
       const hasGit = await (async () => {
         try {
           await stat(path.join(projectRoot, ".git"))
@@ -448,31 +459,45 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       return
     }
 
+    state.initReminderFired = false
+
     const triggers: string[] = []
     if (state.hasNewRequirement) triggers.push("- 检测到新需求讨论 → 考虑创建 requirements/REQ-xxx.md")
     if (state.hasTechDecision) triggers.push("- 检测到技术决策 → 考虑更新 patterns.md")
     if (state.hasBugFix) triggers.push("- 检测到 Bug 修复/踩坑 → 考虑记录到 learnings/")
     if (state.filesModified.length >= 1) triggers.push(`- 本轮修改了 ${state.filesModified.length} 个文件 → 考虑更新 active.md`)
 
-    if (triggers.length > 0) {
-      state.reminderFired = true
-      log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "FIRE_UPDATE", reason: `${triggers.length} triggers detected`, triggers })
-      try {
-        await client.session.prompt({
-          path: { id: sessionId },
-          body: {
-            parts: [{
-              type: "text",
-              text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n项目 \`${path.basename(projectRoot)}\` 本轮检测到以下事件，请确认是否需要更新 Memory Bank：\n\n**项目路径**：\`${projectRoot}\`\n\n${triggers.join("\n")}\n\n**操作选项**：\n1. 如需更新 → 回复"更新"，输出更新计划\n2. 如需更新并提交所有变更 → 回复"更新并提交"\n3. 如不需要 → 回复"跳过"\n\n注意：这是系统自动提醒，不是用户消息。`,
-            }],
-          },
-        })
-        log.info("UPDATE reminder sent successfully", { sessionId, root: projectRoot })
-      } catch (promptErr) {
-        log.error("Failed to send UPDATE reminder:", String(promptErr))
-      }
-    } else {
+    if (triggers.length === 0) {
       log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "NO_TRIGGER", reason: "has memory-bank but no triggers" })
+      return
+    }
+
+    if (triggerSignature === state.lastSyncedTriggerSignature) {
+      log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "already synced (signature matches lastSyncedTriggerSignature)" })
+      return
+    }
+
+    if (triggerSignature === state.lastUpdateReminderSignature) {
+      log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "already reminded (signature matches lastUpdateReminderSignature)" })
+      return
+    }
+
+    state.lastUpdateReminderSignature = triggerSignature
+    log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "FIRE_UPDATE", reason: `${triggers.length} triggers detected`, triggers })
+
+    try {
+      await client.session.prompt({
+        path: { id: sessionId },
+        body: {
+          parts: [{
+            type: "text",
+            text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n项目 \`${path.basename(projectRoot)}\` 本轮检测到以下事件，请确认是否需要更新 Memory Bank：\n\n**项目路径**：\`${projectRoot}\`\n\n${triggers.join("\n")}\n\n**操作选项**：\n1. 如需更新 → 回复"更新"，输出更新计划\n2. 如需更新并提交所有变更 → 回复"更新并提交"\n3. 如不需要 → 回复"跳过"\n\n注意：这是系统自动提醒，不是用户消息。`,
+          }],
+        },
+      })
+      log.info("UPDATE reminder sent successfully", { sessionId, root: projectRoot })
+    } catch (promptErr) {
+      log.error("Failed to send UPDATE reminder:", String(promptErr))
     }
   }
 
@@ -552,19 +577,16 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
             if (/新需求|new req|feature request|需要实现|要做一个/.test(content)) {
               state.hasNewRequirement = true
-              state.reminderFired = false
               log.debug("Keyword detected: newRequirement", { sessionId, root: targetRoot })
             }
 
             if (/决定用|选择了|我们用|技术选型|architecture|决策/.test(content)) {
               state.hasTechDecision = true
-              state.reminderFired = false
               log.debug("Keyword detected: techDecision", { sessionId, root: targetRoot })
             }
 
             if (/bug|修复|fix|问题|error|踩坑|教训/.test(content)) {
               state.hasBugFix = true
-              state.reminderFired = false
               log.debug("Keyword detected: bugFix", { sessionId, root: targetRoot })
             }
 

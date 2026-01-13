@@ -24,3 +24,6 @@ __pycache__/
 .Python
 venv/
 .venv/
+
+# Build output
+dist/
