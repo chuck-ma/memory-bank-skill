@@ -416,13 +416,29 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       if (state.filesModified.length >= 1) {
         state.reminderFired = true
         log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "FIRE_INIT", reason: `${state.filesModified.length} files modified, no memory-bank` })
+
+        // Check if project has git initialized
+        const hasGit = await (async () => {
+          try {
+            await stat(path.join(projectRoot, ".git"))
+            return true
+          } catch {
+            return false
+          }
+        })()
+
+        const gitInitStep = hasGit
+          ? ""
+          : "1. 执行 `git init`（项目尚未初始化 Git）\n"
+        const stepOffset = hasGit ? 0 : 1
+
         try {
           await client.session.prompt({
             path: { id: sessionId },
             body: {
               parts: [{
                 type: "text",
-                text: `## [SYSTEM REMINDER - Memory Bank Init]\n\n项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank，但本轮修改了 ${state.filesModified.length} 个文件。\n\n**项目路径**：\`${projectRoot}\`\n\n**建议**：初始化 Memory Bank 以持久化项目上下文。\n\n**操作**：\n1. 如需初始化 → 扫描项目结构，创建 memory-bank/brief.md + tech.md\n2. 如不需要 → 回复"跳过初始化"后结束\n\n注意：这是系统自动提醒，不是用户消息。`,
+                text: `## [SYSTEM REMINDER - Memory Bank Init]\n\n项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank，但本轮修改了 ${state.filesModified.length} 个文件。\n\n**项目路径**：\`${projectRoot}\`\n\n**将要执行的操作**：\n${gitInitStep}${stepOffset + 1}. 创建 \`memory-bank/\` 目录\n${stepOffset + 2}. 扫描项目结构（README.md、package.json 等）\n${stepOffset + 3}. 生成 \`memory-bank/brief.md\`（项目概述）\n${stepOffset + 4}. 生成 \`memory-bank/tech.md\`（技术栈）\n${stepOffset + 5}. 生成 \`memory-bank/_index.md\`（索引）\n\n**操作选项**：\n1. 如需初始化 → 回复确认，我将执行上述操作\n2. 如不需要 → 回复"跳过初始化"\n\n注意：这是系统自动提醒，不是用户消息。`,
               }],
             },
           })
@@ -570,6 +586,14 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         if (event.type === "session.idle") {
           log.info("Session idle event received", { sessionId })
           await evaluateAndFireReminder(sessionId)
+        }
+
+        if (event.type === "session.status") {
+          const status = (event as any).properties?.status
+          if (status?.type === "idle") {
+            log.info("Session status idle received", { sessionId })
+            await evaluateAndFireReminder(sessionId)
+          }
         }
       } catch (err) {
         log.error("event handler error:", String(err))

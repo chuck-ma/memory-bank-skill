@@ -1,0 +1,38 @@
+{
+  "name": "memory-bank-skill",
+  "version": "4.0.0",
+  "description": "Memory Bank - 项目记忆系统，让 AI 助手在每次对话中都能快速理解项目上下文",
+  "type": "module",
+  "bin": {
+    "memory-bank-skill": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "plugin/",
+    "skill/",
+    "templates/"
+  ],
+  "scripts": {
+    "build": "bun build src/cli.ts --outdir dist --target bun",
+    "prepublishOnly": "bun run build",
+    "test:install": "bun run build && bun ./dist/cli.js install",
+    "test:doctor": "bun run build && bun ./dist/cli.js doctor"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "memory-bank",
+    "ai",
+    "context",
+    "claude"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/memory-bank-skill"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
