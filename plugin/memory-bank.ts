@@ -219,10 +219,21 @@ async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<Memo
 
   if (parts.length === 0) return null
 
+  const fileList = files.map(f => f.relPath.replace("memory-bank/", "")).join(", ")
+  const totalChars = files.reduce((sum, f) => sum + f.chars, 0)
+
   const header =
     `# Memory Bank Bootstrap (Auto-injected by OpenCode plugin)\n\n` +
     `Use \`memory-bank/_index.md\` to locate additional context files.\n` +
     `Read more files from \`memory-bank/\` as needed based on the task.\n\n` +
+    `**AI 行为指令**：\n` +
+    `- 首轮回复末尾加一行确认：\`| 📚 Memory Bank | ${fileList} (${totalChars.toLocaleString()} chars) |\`\n` +
+    `- **写入触发场景**（语义判断，非关键词匹配）：\n` +
+    `  - 用户描述新功能/需求（"我需要..."、"能不能加..."、"帮我做..."、"要实现..."）→ requirements/\n` +
+    `  - 用户做出技术选型（"我们用 X 吧"、"决定采用..."、"选择..."）→ patterns.md\n` +
+    `  - 修复了 bug 或踩坑经验（"原来问题是..."、"这个坑是..."、"发现..."）→ learnings/\n` +
+    `  - 当前任务完成，焦点切换 → active.md\n` +
+    `- 触发后：工作完成时按 memory-bank skill 规范输出更新计划\n\n` +
     `---\n\n`
 
   const wrapped =
@@ -234,8 +245,6 @@ async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<Memo
   const budget = maxChars()
   const truncated = wrapped.length > budget
   const text = truncateToBudget(wrapped, budget)
-  const totalChars = files.reduce((sum, f) => sum + f.chars, 0)
-
   return { text, files, totalChars, truncated }
 }
 
@@ -492,7 +501,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       await client.session.prompt({
         path: { id: sessionId },
         body: {
-          noReply: true,
+          noReply: false,
           variant: PLUGIN_PROMPT_VARIANT,
           parts: [{ type: "text", text }],
         },
@@ -600,7 +609,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             variant: PLUGIN_PROMPT_VARIANT,
             parts: [{
               type: "text",
-              text: `## [SYSTEM REMINDER - Memory Bank Init]\n\n项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n**项目路径**：\`${projectRoot}\`\n\n**将要执行的操作**：\n${gitInitStep}${stepOffset + 1}. 创建 \`memory-bank/\` 目录\n${stepOffset + 2}. 扫描项目结构（README.md、package.json 等）\n${stepOffset + 3}. 生成 \`memory-bank/brief.md\`（项目概述）\n${stepOffset + 4}. 生成 \`memory-bank/tech.md\`（技术栈）\n${stepOffset + 5}. 生成 \`memory-bank/_index.md\`（索引）\n\n**操作选项**：\n1. 如需初始化 → 回复"初始化"\n2. 如需初始化并提交所有变更 → 回复"初始化并提交"\n3. 如不需要 → 回复"跳过初始化"\n\n注意：这是系统自动提醒，不是用户消息。`,
+              text: `## [SYSTEM REMINDER - Memory Bank Init]\n\n项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n**项目路径**：\`${projectRoot}\`\n\n**将要执行的操作**：\n${gitInitStep}${stepOffset + 1}. 创建 \`memory-bank/\` 目录\n${stepOffset + 2}. 扫描项目结构（README.md、package.json 等）\n${stepOffset + 3}. 生成 \`memory-bank/brief.md\`（项目概述）\n${stepOffset + 4}. 生成 \`memory-bank/tech.md\`（技术栈）\n${stepOffset + 5}. 生成 \`memory-bank/_index.md\`（索引）\n\n**操作选项**：\n1. 如需初始化 → 回复"初始化"\n2. 如需初始化并提交 → 回复"初始化并提交"\n3. 如不需要 → 回复"跳过初始化"\n\n注意：这是系统自动提醒，不是用户消息。`,
             }],
           },
         })
@@ -662,7 +671,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           variant: PLUGIN_PROMPT_VARIANT,
           parts: [{
             type: "text",
-            text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n本轮检测到以下变更：${filesSection}\n**触发事件**：\n${triggers.join("\n")}\n\n**操作**：请加载 memory-bank skill，按规范更新（无需 slash command）。`,
+            text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n本轮检测到以下变更：${filesSection}\n**触发事件**：\n${triggers.join("\n")}\n\n**操作选项**：\n1. 如需更新 → 回复"更新"，输出更新计划\n2. 如需更新并提交 → 回复"更新并提交"\n3. 如不需要 → 回复"跳过"`,
           }],
         },
       })
@@ -799,7 +808,9 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
               log.debug("Context notification skipped (no message key)", { sessionId, messageId })
               return
             }
-            await sendContextNotification(sessionId, messageKey, messageId)
+            // DISABLED: Context notification 已禁用，改用 system prompt 中的 AI 行为指令
+            // await sendContextNotification(sessionId, messageKey, messageId)
+            log.debug("Context notification disabled (using system prompt instruction instead)", { sessionId, messageKey, messageId })
 
             // Mark that a user message was received, enabling the next idle reminder
             meta.userMessageReceived = true
