@@ -27,3 +27,6 @@ venv/
 
 # Build output
 dist/
+
+# Logs
+log/

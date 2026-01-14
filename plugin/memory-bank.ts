@@ -55,7 +55,6 @@ interface SessionMeta {
   promptInProgress: boolean  // Prevent re-entrancy during prompt calls
   userMessageReceived: boolean  // Track if a new user message was received since last reminder
   sessionNotified: boolean  // Track if context notification was already sent this session
-  ignoreNextMessageUpdated: boolean  // Skip the next message.updated if it's plugin-generated
 }
 
 interface MemoryBankContextResult {
@@ -91,7 +90,10 @@ function maxChars(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_MAX_CHARS
 }
 
-function isPluginGeneratedPrompt(message: { variant?: string } | undefined, content: string): boolean {
+function isPluginGeneratedPrompt(
+  message: { variant?: string; agent?: string } | undefined,
+  content: string
+): boolean {
   if (message?.variant === PLUGIN_PROMPT_VARIANT) return true
   return content.includes("## [Memory Bank]") || content.includes("## [SYSTEM REMINDER - Memory Bank")
 }
@@ -232,7 +234,7 @@ async function checkMemoryBankExists(
 function getSessionMeta(sessionId: string, fallbackRoot: string): SessionMeta {
   let meta = sessionMetas.get(sessionId)
   if (!meta) {
-    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, ignoreNextMessageUpdated: false }
+    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false }
     sessionMetas.set(sessionId, meta)
   }
   return meta
@@ -432,7 +434,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
     const text = `## [Memory Bank]
 
-**已加载**: ${fileList} (${result.totalChars.toLocaleString()} chars)${truncatedNote}
+**已读取 Memory Bank 文件**: ${fileList} (${result.totalChars.toLocaleString()} chars)${truncatedNote}
 
 **写入提醒**：如果本轮涉及以下事件，工作完成后输出更新计划：
 - 新需求 → requirements/
@@ -444,10 +446,10 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
     try {
       meta.promptInProgress = true
-      meta.ignoreNextMessageUpdated = true
       await client.session.prompt({
         path: { id: sessionId },
         body: {
+          noReply: true,
           variant: PLUGIN_PROMPT_VARIANT,
           parts: [{ type: "text", text }],
         },
@@ -460,7 +462,6 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       }
       log.info("Context notification sent", { sessionId, messageId, files: result.files.length, totalChars: result.totalChars })
     } catch (err) {
-      meta.ignoreNextMessageUpdated = false
       log.error("Failed to send context notification:", String(err))
     } finally {
       meta.promptInProgress = false
@@ -552,6 +553,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         await client.session.prompt({
           path: { id: sessionId },
           body: {
+            noReply: true,
             variant: PLUGIN_PROMPT_VARIANT,
             parts: [{
               type: "text",
@@ -610,10 +612,10 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
     try {
       meta.promptInProgress = true
-      meta.ignoreNextMessageUpdated = true
       await client.session.prompt({
         path: { id: sessionId },
         body: {
+          noReply: true,
           variant: PLUGIN_PROMPT_VARIANT,
           parts: [{
             type: "text",
@@ -623,7 +625,6 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       })
       log.info("UPDATE reminder sent successfully", { sessionId, root: projectRoot })
     } catch (promptErr) {
-      meta.ignoreNextMessageUpdated = false
       log.error("Failed to send UPDATE reminder:", String(promptErr))
     } finally {
       meta.promptInProgress = false
@@ -681,7 +682,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
 
         if (event.type === "session.created") {
-          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, ignoreNextMessageUpdated: false })
+          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false })
           log.info("Session created", { sessionId })
         }
 
@@ -701,13 +702,13 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           const meta = getSessionMeta(sessionId, projectRoot)
           const rawContent = JSON.stringify(message?.content || "")
 
-          if (meta.ignoreNextMessageUpdated && isPluginGeneratedPrompt(message, rawContent)) {
-            meta.ignoreNextMessageUpdated = false
-            log.debug("message.updated skipped (plugin prompt)", { sessionId })
-            return
-          }
-          if (meta.ignoreNextMessageUpdated) {
-            meta.ignoreNextMessageUpdated = false
+          if (DEBUG) {
+            log.debug("message.updated received", {
+              sessionId,
+              role: message?.role,
+              agent: (message as any)?.agent,
+              variant: (message as any)?.variant,
+            })
           }
 
           if (isPluginGeneratedPrompt(message, rawContent)) {
@@ -717,7 +718,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
           if (message?.role === "user") {
             if (meta.promptInProgress) {
-              log.debug("message.updated skipped (plugin prompt or prompt in progress)", { sessionId })
+              log.debug("message.updated skipped (prompt in progress)", { sessionId })
               return
             }
 
