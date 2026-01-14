@@ -731,32 +731,31 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           }
         }
 
-        if (event.type === "session.idle") {
-          const meta = getSessionMeta(sessionId, projectRoot)
-          // Only fire reminder if a new user message was received since last reminder
-          if (!meta.userMessageReceived) {
-            log.debug("Session idle skipped (no new user message)", { sessionId })
-            return
-          }
-          log.info("Session idle event received", { sessionId })
-          meta.userMessageReceived = false  // Reset flag after processing
-          await evaluateAndFireReminder(sessionId)
-        }
+        // DISABLED: 尾部提醒已禁用，只保留头部加载
+        // if (event.type === \"session.idle\") {
+        //   const meta = getSessionMeta(sessionId, projectRoot)
+        //   if (!meta.userMessageReceived) {
+        //     log.debug(\"Session idle skipped (no new user message)\", { sessionId })
+        //     return
+        //   }
+        //   log.info(\"Session idle event received\", { sessionId })
+        //   meta.userMessageReceived = false
+        //   await evaluateAndFireReminder(sessionId)
+        // }
 
-        if (event.type === "session.status") {
-          const status = (event as any).properties?.status
-          if (status?.type === "idle") {
-            const meta = getSessionMeta(sessionId, projectRoot)
-            // Only fire reminder if a new user message was received since last reminder
-            if (!meta.userMessageReceived) {
-              log.debug("Session status idle skipped (no new user message)", { sessionId })
-              return
-            }
-            log.info("Session status idle received", { sessionId })
-            meta.userMessageReceived = false  // Reset flag after processing
-            await evaluateAndFireReminder(sessionId)
-          }
-        }
+        // if (event.type === \"session.status\") {
+        //   const status = (event as any).properties?.status
+        //   if (status?.type === \"idle\") {
+        //     const meta = getSessionMeta(sessionId, projectRoot)
+        //     if (!meta.userMessageReceived) {
+        //       log.debug(\"Session status idle skipped (no new user message)\", { sessionId })
+        //       return
+        //     }
+        //     log.info(\"Session status idle received\", { sessionId })
+        //     meta.userMessageReceived = false
+        //     await evaluateAndFireReminder(sessionId)
+        //   }
+        // }
       } catch (err) {
         log.error("event handler error:", String(err))
       }
