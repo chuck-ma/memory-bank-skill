@@ -2,6 +2,14 @@
 
 ## 刚完成
 
+### 修复 Memory Bank 触发条件
+
+修复 AI 行为指令中的触发逻辑问题：
+
+- ✅ "首轮回复" → "每次回复"（确保每次对话都确认 Memory Bank）
+- ✅ 新增触发条件：AI 修改了代码/配置文件 → active.md
+- ✅ 更新 SKILL.md 中的 Bootstrap 流程描述
+
 ### v5.0.0 - OpenCode 原生路径
 
 切换到 OpenCode 原生 skill 路径，移除 Claude 兼容层：

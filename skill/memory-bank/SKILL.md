@@ -48,7 +48,7 @@ memory-bank/
 
 ## Bootstrap 流程（零初始化）
 
-**每次会话第一轮**：
+**每次用户对话时**：
 
 ```
 1. 检测 memory-bank/ 目录是否存在
@@ -257,7 +257,7 @@ Files updated:
 ## 每轮行为规范
 
 ```
-1. Bootstrap 检查（仅第一轮）
+1. Bootstrap 检查（每次用户对话）
    └─ 检测 memory-bank/ 是否存在
 
 2. 固定加载
