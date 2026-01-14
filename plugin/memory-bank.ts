@@ -55,6 +55,10 @@ interface SessionMeta {
   promptInProgress: boolean  // Prevent re-entrancy during prompt calls
   userMessageReceived: boolean  // Track if a new user message was received since last reminder
   sessionNotified: boolean  // Track if context notification was already sent this session
+  userMessageSeq: number
+  lastUserMessageDigest?: string
+  lastUserMessageAt?: number
+  lastUserMessageKey?: string
 }
 
 interface MemoryBankContextResult {
@@ -96,6 +100,44 @@ function isPluginGeneratedPrompt(
 ): boolean {
   if (message?.variant === PLUGIN_PROMPT_VARIANT) return true
   return content.includes("## [Memory Bank]") || content.includes("## [SYSTEM REMINDER - Memory Bank")
+}
+
+function getMessageKey(message: any, rawContent: string): string | null {
+  const id = message?.id || message?.messageID
+  if (id) return String(id)
+  const created = message?.time?.created
+  if (typeof created === "number") return `ts:${created}`
+  const trimmed = rawContent.trim()
+  if (trimmed) return `content:${trimmed.slice(0, 200)}`
+  return null
+}
+
+function getOrCreateMessageKey(
+  meta: SessionMeta,
+  message: any,
+  rawContent: string
+): string | null {
+  const directKey = getMessageKey(message, rawContent)
+  if (directKey && !directKey.startsWith("content:")) return directKey
+
+  const trimmed = rawContent.trim()
+  if (!trimmed) return directKey ?? null
+
+  const now = Date.now()
+  const digest = trimmed.slice(0, 200)
+  const sameAsLast = meta.lastUserMessageDigest === digest
+  const withinWindow = typeof meta.lastUserMessageAt === "number" && now - meta.lastUserMessageAt < 2000
+
+  if (sameAsLast && withinWindow && meta.lastUserMessageKey) {
+    return meta.lastUserMessageKey
+  }
+
+  meta.userMessageSeq += 1
+  const key = `seq:${meta.userMessageSeq}`
+  meta.lastUserMessageDigest = digest
+  meta.lastUserMessageAt = now
+  meta.lastUserMessageKey = key
+  return key
 }
 
 function createLogger(client: PluginClient) {
@@ -234,7 +276,7 @@ async function checkMemoryBankExists(
 function getSessionMeta(sessionId: string, fallbackRoot: string): SessionMeta {
   let meta = sessionMetas.get(sessionId)
   if (!meta) {
-    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false }
+    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0 }
     sessionMetas.set(sessionId, meta)
   }
   return meta
@@ -405,7 +447,8 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
   async function sendContextNotification(
     sessionId: string,
-    messageId: string
+    messageKey: string,
+    messageId?: string
   ): Promise<void> {
     if (isDisabled()) return
 
@@ -418,8 +461,8 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
     }
 
     // Only notify once per user message (using messageId to deduplicate)
-    if (meta.notifiedMessageIds.has(messageId)) {
-      log.debug("Context notification skipped (already notified for this message)", { sessionId, messageId })
+    if (meta.notifiedMessageIds.has(messageKey)) {
+      log.debug("Context notification skipped (already notified for this message)", { sessionId, messageKey, messageId })
       return
     }
 
@@ -454,13 +497,13 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           parts: [{ type: "text", text }],
         },
       })
-      meta.notifiedMessageIds.add(messageId)
+      meta.notifiedMessageIds.add(messageKey)
       meta.sessionNotified = true  // Mark session as notified
       if (meta.notifiedMessageIds.size > 100) {
         const first = meta.notifiedMessageIds.values().next().value
         if (first) meta.notifiedMessageIds.delete(first)
       }
-      log.info("Context notification sent", { sessionId, messageId, files: result.files.length, totalChars: result.totalChars })
+      log.info("Context notification sent", { sessionId, messageKey, messageId, files: result.files.length, totalChars: result.totalChars })
     } catch (err) {
       log.error("Failed to send context notification:", String(err))
     } finally {
@@ -682,7 +725,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
 
         if (event.type === "session.created") {
-          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false })
+          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0 })
           log.info("Session created", { sessionId })
         }
 
@@ -708,6 +751,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
               role: message?.role,
               agent: (message as any)?.agent,
               variant: (message as any)?.variant,
+              messageId: message?.id || message?.messageID,
             })
           }
 
@@ -750,9 +794,12 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             }
 
             const messageId = message.id || message.messageID
-            if (messageId) {
-              await sendContextNotification(sessionId, messageId)
+            const messageKey = getOrCreateMessageKey(meta, message, rawContent)
+            if (!messageKey) {
+              log.debug("Context notification skipped (no message key)", { sessionId, messageId })
+              return
             }
+            await sendContextNotification(sessionId, messageKey, messageId)
 
             // Mark that a user message was received, enabling the next idle reminder
             meta.userMessageReceived = true
