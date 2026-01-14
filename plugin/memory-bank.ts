@@ -49,6 +49,17 @@ interface RootState {
 interface SessionMeta {
   rootsTouched: Set<string>
   lastActiveRoot: string | null
+  notifiedMessageIds: Set<string>
+  planOutputted: boolean
+  promptInProgress: boolean  // Prevent re-entrancy during prompt calls
+  userMessageReceived: boolean  // Track if a new user message was received since last reminder
+}
+
+interface MemoryBankContextResult {
+  text: string
+  files: { relPath: string; chars: number }[]
+  totalChars: number
+  truncated: boolean
 }
 
 type LogLevel = "debug" | "info" | "warn" | "error"
@@ -101,7 +112,7 @@ function createLogger(client: PluginClient) {
           body: { service: SERVICE_NAME, level, message },
         })
       )
-      .catch(() => {})
+      .catch(() => { })
   }
 
   return {
@@ -140,8 +151,9 @@ function truncateToBudget(text: string, budget: number): string {
   return text.slice(0, budget - reserve) + TRUNCATION_NOTICE
 }
 
-async function buildMemoryBankContext(projectRoot: string): Promise<string | null> {
+async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<MemoryBankContextResult | null> {
   const parts: string[] = []
+  const files: { relPath: string; chars: number }[] = []
 
   for (const rel of MEMORY_BANK_FILES) {
     const abs = path.join(projectRoot, rel)
@@ -150,6 +162,7 @@ async function buildMemoryBankContext(projectRoot: string): Promise<string | nul
     const trimmed = content.trim()
     if (!trimmed) continue
     parts.push(`## ${rel}\n\n${trimmed}`)
+    files.push({ relPath: rel, chars: trimmed.length })
   }
 
   if (parts.length === 0) return null
@@ -166,7 +179,17 @@ async function buildMemoryBankContext(projectRoot: string): Promise<string | nul
     parts.join("\n\n---\n\n") +
     `\n${SENTINEL_CLOSE}`
 
-  return truncateToBudget(wrapped, maxChars())
+  const budget = maxChars()
+  const truncated = wrapped.length > budget
+  const text = truncateToBudget(wrapped, budget)
+  const totalChars = files.reduce((sum, f) => sum + f.chars, 0)
+
+  return { text, files, totalChars, truncated }
+}
+
+async function buildMemoryBankContext(projectRoot: string): Promise<string | null> {
+  const result = await buildMemoryBankContextWithMeta(projectRoot)
+  return result?.text ?? null
 }
 
 // ============================================================================
@@ -201,7 +224,7 @@ async function checkMemoryBankExists(
 function getSessionMeta(sessionId: string, fallbackRoot: string): SessionMeta {
   let meta = sessionMetas.get(sessionId)
   if (!meta) {
-    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot }
+    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false }
     sessionMetas.set(sessionId, meta)
   }
   return meta
@@ -370,9 +393,78 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
   log.info("Plugin initialized (unified)", { projectRoot })
 
+  async function sendContextNotification(
+    sessionId: string,
+    messageId: string
+  ): Promise<void> {
+    if (isDisabled()) return
+
+    const meta = getSessionMeta(sessionId, projectRoot)
+
+    // Prevent re-entrancy: skip if a prompt is already in progress
+    if (meta.promptInProgress) {
+      log.debug("Context notification skipped (prompt in progress)", { sessionId, messageId })
+      return
+    }
+
+    if (meta.notifiedMessageIds.has(messageId)) {
+      log.debug("Context notification skipped (already notified for this message)", { sessionId, messageId })
+      return
+    }
+
+    const result = await buildMemoryBankContextWithMeta(projectRoot)
+    if (!result) {
+      log.debug("Context notification skipped (no memory-bank)", { sessionId })
+      return
+    }
+
+    const fileList = result.files.map(f => f.relPath.replace("memory-bank/", "")).join(", ")
+    const truncatedNote = result.truncated ? " (truncated)" : ""
+
+    const text = `## [Memory Bank]
+
+**已加载**: ${fileList} (${result.totalChars.toLocaleString()} chars)${truncatedNote}
+
+**写入提醒**：如果本轮涉及以下事件，工作完成后输出更新计划：
+- 新需求 → requirements/
+- 技术决策 → patterns.md
+- Bug修复/踩坑 → learnings/
+- 焦点变更 → active.md
+
+操作：加载 \`/skill memory-bank\` 按规范处理。`
+
+    try {
+      meta.promptInProgress = true
+      await client.session.prompt({
+        path: { id: sessionId },
+        body: {
+          parts: [{ type: "text", text }],
+        },
+      })
+      meta.notifiedMessageIds.add(messageId)
+      if (meta.notifiedMessageIds.size > 100) {
+        const first = meta.notifiedMessageIds.values().next().value
+        if (first) meta.notifiedMessageIds.delete(first)
+      }
+      log.info("Context notification sent", { sessionId, messageId, files: result.files.length, totalChars: result.totalChars })
+    } catch (err) {
+      log.error("Failed to send context notification:", String(err))
+    } finally {
+      meta.promptInProgress = false
+    }
+  }
+
   async function evaluateAndFireReminder(sessionId: string): Promise<void> {
     if (isDisabled()) {
       log.info("[SESSION_IDLE DECISION]", { sessionId, decision: "SKIP", reason: "MEMORY_BANK_DISABLED is set" })
+      return
+    }
+
+    const meta = getSessionMeta(sessionId, projectRoot)
+
+    // Prevent re-entrancy: skip if a prompt is already in progress
+    if (meta.promptInProgress) {
+      log.info("[SESSION_IDLE DECISION]", { sessionId, decision: "SKIP", reason: "prompt already in progress" })
       return
     }
 
@@ -443,6 +535,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       const stepOffset = hasGit ? 0 : 1
 
       try {
+        meta.promptInProgress = true
         await client.session.prompt({
           path: { id: sessionId },
           body: {
@@ -455,6 +548,8 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         log.info("INIT reminder sent successfully", { sessionId, root: projectRoot })
       } catch (promptErr) {
         log.error("Failed to send INIT reminder:", String(promptErr))
+      } finally {
+        meta.promptInProgress = false
       }
       return
     }
@@ -462,13 +557,27 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
     state.initReminderFired = false
 
     const triggers: string[] = []
-    if (state.hasNewRequirement) triggers.push("- 检测到新需求讨论 → 考虑创建 requirements/REQ-xxx.md")
-    if (state.hasTechDecision) triggers.push("- 检测到技术决策 → 考虑更新 patterns.md")
-    if (state.hasBugFix) triggers.push("- 检测到 Bug 修复/踩坑 → 考虑记录到 learnings/")
-    if (state.filesModified.length >= 1) triggers.push(`- 本轮修改了 ${state.filesModified.length} 个文件 → 考虑更新 active.md`)
+    if (state.hasNewRequirement) triggers.push("- 检测到新需求讨论")
+    if (state.hasTechDecision) triggers.push("- 检测到技术决策")
+    if (state.hasBugFix) triggers.push("- 检测到 Bug 修复/踩坑")
+
+    const modifiedFilesRelative = state.filesModified.map(abs => path.relative(projectRoot, abs))
+    const displayFiles = modifiedFilesRelative.slice(0, 5)
+    const moreCount = modifiedFilesRelative.length - 5
+
+    let filesSection = ""
+    if (modifiedFilesRelative.length > 0) {
+      triggers.push("- 代码文件变更")
+      filesSection = `\n**变更文件**：\n${displayFiles.map(f => `- ${f}`).join("\n")}${moreCount > 0 ? `\n(+${moreCount} more)` : ""}\n`
+    }
 
     if (triggers.length === 0) {
       log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "NO_TRIGGER", reason: "has memory-bank but no triggers" })
+      return
+    }
+
+    if (meta.planOutputted) {
+      log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "SKIP", reason: "AI already outputted update plan" })
       return
     }
 
@@ -486,18 +595,21 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
     log.info("[SESSION_IDLE DECISION]", { ...decisionContext, decision: "FIRE_UPDATE", reason: `${triggers.length} triggers detected`, triggers })
 
     try {
+      meta.promptInProgress = true
       await client.session.prompt({
         path: { id: sessionId },
         body: {
           parts: [{
             type: "text",
-            text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n项目 \`${path.basename(projectRoot)}\` 本轮检测到以下事件，请确认是否需要更新 Memory Bank：\n\n**项目路径**：\`${projectRoot}\`\n\n${triggers.join("\n")}\n\n**操作选项**：\n1. 如需更新 → 回复"更新"，输出更新计划\n2. 如需更新并提交所有变更 → 回复"更新并提交"\n3. 如不需要 → 回复"跳过"\n\n注意：这是系统自动提醒，不是用户消息。`,
+            text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n本轮检测到以下变更：${filesSection}\n**触发事件**：\n${triggers.join("\n")}\n\n**操作**：加载 \`/skill memory-bank\` 处理更新。`,
           }],
         },
       })
       log.info("UPDATE reminder sent successfully", { sessionId, root: projectRoot })
     } catch (promptErr) {
       log.error("Failed to send UPDATE reminder:", String(promptErr))
+    } finally {
+      meta.promptInProgress = false
     }
   }
 
@@ -552,7 +664,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
 
         if (event.type === "session.created") {
-          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot })
+          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false })
           log.info("Session created", { sessionId })
         }
 
@@ -597,18 +709,51 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
               state.memoryBankReviewed = true
               log.info("Escape valve triggered: memoryBankReviewed", { sessionId, root: targetRoot })
             }
+
+            const messageId = message.id || message.messageID
+            if (messageId) {
+              await sendContextNotification(sessionId, messageId)
+            }
+
+            // Mark that a user message was received, enabling the next idle reminder
+            meta.userMessageReceived = true
+            meta.planOutputted = false
+          }
+
+          if (message?.role === "assistant") {
+            const content = JSON.stringify(message.content || "")
+            const meta = getSessionMeta(sessionId, projectRoot)
+
+            if (/Memory Bank 更新计划|\[Memory Bank 更新计划\]/.test(content)) {
+              meta.planOutputted = true
+              log.info("Plan outputted detected", { sessionId })
+            }
           }
         }
 
         if (event.type === "session.idle") {
+          const meta = getSessionMeta(sessionId, projectRoot)
+          // Only fire reminder if a new user message was received since last reminder
+          if (!meta.userMessageReceived) {
+            log.debug("Session idle skipped (no new user message)", { sessionId })
+            return
+          }
           log.info("Session idle event received", { sessionId })
+          meta.userMessageReceived = false  // Reset flag after processing
           await evaluateAndFireReminder(sessionId)
         }
 
         if (event.type === "session.status") {
           const status = (event as any).properties?.status
           if (status?.type === "idle") {
+            const meta = getSessionMeta(sessionId, projectRoot)
+            // Only fire reminder if a new user message was received since last reminder
+            if (!meta.userMessageReceived) {
+              log.debug("Session status idle skipped (no new user message)", { sessionId })
+              return
+            }
             log.info("Session status idle received", { sessionId })
+            meta.userMessageReceived = false  // Reset flag after processing
             await evaluateAndFireReminder(sessionId)
           }
         }
