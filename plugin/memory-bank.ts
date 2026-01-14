@@ -29,6 +29,7 @@ const SENTINEL_OPEN = "<memory-bank-bootstrap>"
 const SENTINEL_CLOSE = "</memory-bank-bootstrap>"
 
 const SERVICE_NAME = "memory-bank"
+const PLUGIN_PROMPT_VARIANT = "memory-bank-plugin"
 
 // ============================================================================
 // Types
@@ -90,11 +91,9 @@ function maxChars(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_MAX_CHARS
 }
 
-function isPluginGeneratedPrompt(content: string): boolean {
-  return (
-    content.includes("## [Memory Bank]") ||
-    content.includes("## [SYSTEM REMINDER - Memory Bank")
-  )
+function isPluginGeneratedPrompt(message: { variant?: string } | undefined, content: string): boolean {
+  if (message?.variant === PLUGIN_PROMPT_VARIANT) return true
+  return content.includes("## [Memory Bank]") || content.includes("## [SYSTEM REMINDER - Memory Bank")
 }
 
 function createLogger(client: PluginClient) {
@@ -449,6 +448,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       await client.session.prompt({
         path: { id: sessionId },
         body: {
+          variant: PLUGIN_PROMPT_VARIANT,
           parts: [{ type: "text", text }],
         },
       })
@@ -552,6 +552,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         await client.session.prompt({
           path: { id: sessionId },
           body: {
+            variant: PLUGIN_PROMPT_VARIANT,
             parts: [{
               type: "text",
               text: `## [SYSTEM REMINDER - Memory Bank Init]\n\n项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n**项目路径**：\`${projectRoot}\`\n\n**将要执行的操作**：\n${gitInitStep}${stepOffset + 1}. 创建 \`memory-bank/\` 目录\n${stepOffset + 2}. 扫描项目结构（README.md、package.json 等）\n${stepOffset + 3}. 生成 \`memory-bank/brief.md\`（项目概述）\n${stepOffset + 4}. 生成 \`memory-bank/tech.md\`（技术栈）\n${stepOffset + 5}. 生成 \`memory-bank/_index.md\`（索引）\n\n**操作选项**：\n1. 如需初始化 → 回复"初始化"\n2. 如需初始化并提交所有变更 → 回复"初始化并提交"\n3. 如不需要 → 回复"跳过初始化"\n\n注意：这是系统自动提醒，不是用户消息。`,
@@ -613,6 +614,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       await client.session.prompt({
         path: { id: sessionId },
         body: {
+          variant: PLUGIN_PROMPT_VARIANT,
           parts: [{
             type: "text",
             text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n本轮检测到以下变更：${filesSection}\n**触发事件**：\n${triggers.join("\n")}\n\n**操作**：请加载 memory-bank skill，按规范更新（无需 slash command）。`,
@@ -699,7 +701,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           const meta = getSessionMeta(sessionId, projectRoot)
           const rawContent = JSON.stringify(message?.content || "")
 
-          if (meta.ignoreNextMessageUpdated && isPluginGeneratedPrompt(rawContent)) {
+          if (meta.ignoreNextMessageUpdated && isPluginGeneratedPrompt(message, rawContent)) {
             meta.ignoreNextMessageUpdated = false
             log.debug("message.updated skipped (plugin prompt)", { sessionId })
             return
@@ -708,7 +710,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             meta.ignoreNextMessageUpdated = false
           }
 
-          if (isPluginGeneratedPrompt(rawContent)) {
+          if (isPluginGeneratedPrompt(message, rawContent)) {
             log.debug("message.updated skipped (plugin prompt)", { sessionId })
             return
           }
