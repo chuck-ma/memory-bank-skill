@@ -408,12 +408,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       return
     }
 
-    // Only notify once per session
-    if (meta.sessionNotified) {
-      log.debug("Context notification skipped (session already notified)", { sessionId, messageId })
-      return
-    }
-
+    // Only notify once per user message (using messageId to deduplicate)
     if (meta.notifiedMessageIds.has(messageId)) {
       log.debug("Context notification skipped (already notified for this message)", { sessionId, messageId })
       return
