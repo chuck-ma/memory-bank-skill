@@ -27,5 +27,5 @@ bunx memory-bank-skill install
 
 ## 版本
 
-- 当前版本：4.0.0
-- 主要更新：统一插件 + 一键安装 CLI
+- 当前版本：5.0.0
+- 主要更新：切换到 OpenCode 原生路径，移除 Claude 兼容层

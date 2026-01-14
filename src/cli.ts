@@ -20,26 +20,7 @@ import { fileURLToPath } from "node:url"
 // Constants
 // ============================================================================
 
-const VERSION = "4.0.0"
-const SENTINEL_BEGIN = "<!-- memory-bank-skill:begin -->"
-const SENTINEL_END = "<!-- memory-bank-skill:end -->"
-
-const CLAUDE_MD_BLOCK = `${SENTINEL_BEGIN}
-## Memory Bank（项目记忆系统）
-
-每次会话开始时，检查 \`memory-bank/\` 目录：
-
-1. **存在** → 读取 \`memory-bank/brief.md\` + \`memory-bank/active.md\` 获取项目上下文
-2. **不存在** → 首次工作时扫描项目结构（README.md、pyproject.toml 等），创建 \`memory-bank/\` 并生成 \`brief.md\` + \`tech.md\`
-
-工作过程中，检测到以下事件时按 \`/memory-bank\` skill 规则写入：
-- **新需求**：创建 \`requirements/REQ-xxx.md\`
-- **技术决策**：追加到 \`patterns.md\`
-- **经验教训**（bug/性能/集成踩坑）：创建 \`learnings/xxx.md\`
-
-写入前输出计划，等待用户确认。详细规则见 \`~/.claude/skills/memory-bank/SKILL.md\`。
-${SENTINEL_END}`
-
+const VERSION = "5.0.0"
 // ============================================================================
 // Types
 // ============================================================================
@@ -246,7 +227,7 @@ async function installSkillFiles(
   manifestFiles: { path: string; sha256: string }[]
 ): Promise<InstallResult> {
   const srcDir = join(packageRoot, "skill", "memory-bank")
-  const destDir = join(homedir(), ".claude", "skills", "memory-bank")
+  const destDir = join(homedir(), ".config", "opencode", "skill", "memory-bank")
 
   if (!(await exists(srcDir))) {
     throw new Error(`Skill source not found: ${srcDir}`)
@@ -351,48 +332,6 @@ async function configureOpencodeJson(
   }
 }
 
-async function configureClaudeMd(undoStack: UndoAction[]): Promise<InstallResult> {
-  const claudeMdPath = join(homedir(), ".claude", "CLAUDE.md")
-
-  let content = ""
-  let existed = false
-
-  if (await exists(claudeMdPath)) {
-    existed = true
-    content = await fs.readFile(claudeMdPath, "utf-8")
-  }
-
-  // Check if sentinel block already exists
-  const beginIdx = content.indexOf(SENTINEL_BEGIN)
-  const endIdx = content.indexOf(SENTINEL_END)
-
-  let newContent: string
-  let modified = false
-
-  if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
-    // Replace existing block
-    const before = content.slice(0, beginIdx)
-    const after = content.slice(endIdx + SENTINEL_END.length)
-    newContent = before + CLAUDE_MD_BLOCK + after
-    // Check if actually changed
-    modified = newContent !== content
-  } else {
-    // Append new block
-    newContent = content.trimEnd() + "\n\n" + CLAUDE_MD_BLOCK + "\n"
-    modified = true
-  }
-
-  if (modified) {
-    await atomicWriteFile(claudeMdPath, newContent, undoStack)
-  }
-
-  return {
-    step: "Configuring CLAUDE.md",
-    status: modified ? (existed ? "updated" : "created") : "already-configured",
-    details: modified ? "Added startup instructions" : "Already configured",
-  }
-}
-
 async function ensurePluginDependencies(
   undoStack: UndoAction[]
 ): Promise<InstallResult> {
@@ -451,8 +390,9 @@ async function writeManifest(
 ): Promise<void> {
   const manifestPath = join(
     homedir(),
-    ".claude",
-    "skills",
+    ".config",
+    "opencode",
+    "skill",
     "memory-bank",
     ".manifest.json"
   )
@@ -502,37 +442,31 @@ async function install(): Promise<void> {
 
   try {
     // Step 1: Install skill files
-    logStep(1, 6, "Installing skill files...")
+    logStep(1, 5, "Installing skill files...")
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles)
     logDetail(r1.details || "")
     results.push(r1)
 
     // Step 2: Install plugin
-    logStep(2, 6, "Installing plugin...")
+    logStep(2, 5, "Installing plugin...")
     const r2 = await installPluginFile(packageRoot, undoStack, manifestFiles)
     logDetail(r2.details || "")
     results.push(r2)
 
     // Step 3: Configure opencode.json
-    logStep(3, 6, "Configuring opencode.json...")
+    logStep(3, 5, "Configuring opencode.json...")
     const r3 = await configureOpencodeJson(undoStack)
     logDetail(r3.details || "")
     results.push(r3)
 
-    // Step 4: Configure CLAUDE.md
-    logStep(4, 6, "Configuring CLAUDE.md...")
-    const r4 = await configureClaudeMd(undoStack)
+    // Step 4: Ensure plugin dependencies
+    logStep(4, 5, "Ensuring plugin dependencies...")
+    const r4 = await ensurePluginDependencies(undoStack)
     logDetail(r4.details || "")
     results.push(r4)
 
-    // Step 5: Ensure plugin dependencies
-    logStep(5, 6, "Ensuring plugin dependencies...")
-    const r5 = await ensurePluginDependencies(undoStack)
-    logDetail(r5.details || "")
-    results.push(r5)
-
-    // Step 6: Run bun install
-    logStep(6, 6, "Installing dependencies...")
+    // Step 5: Run bun install
+    logStep(5, 5, "Installing dependencies...")
     const bunSuccess = await runBunInstall()
     if (bunSuccess) {
       logDetail("Dependencies ready")
@@ -573,7 +507,7 @@ async function doctor(): Promise<void> {
   const checks = [
     {
       name: "Skill files",
-      path: join(homedir(), ".claude", "skills", "memory-bank", "SKILL.md"),
+      path: join(homedir(), ".config", "opencode", "skill", "memory-bank", "SKILL.md"),
     },
     {
       name: "Plugin file",
@@ -582,10 +516,6 @@ async function doctor(): Promise<void> {
     {
       name: "OpenCode config",
       path: join(homedir(), ".config", "opencode", "opencode.json"),
-    },
-    {
-      name: "CLAUDE.md",
-      path: join(homedir(), ".claude", "CLAUDE.md"),
     },
     {
       name: "Plugin dependencies",
@@ -608,7 +538,7 @@ async function doctor(): Promise<void> {
   }
 
   // Check manifest
-  const manifestPath = join(homedir(), ".claude", "skills", "memory-bank", ".manifest.json")
+  const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json")
   if (await exists(manifestPath)) {
     try {
       const manifest: Manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"))

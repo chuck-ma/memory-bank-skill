@@ -24,24 +24,7 @@ import { homedir } from "os";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
-var VERSION = "4.0.0";
-var SENTINEL_BEGIN = "<!-- memory-bank-skill:begin -->";
-var SENTINEL_END = "<!-- memory-bank-skill:end -->";
-var CLAUDE_MD_BLOCK = `${SENTINEL_BEGIN}
-## Memory Bank\uFF08\u9879\u76EE\u8BB0\u5FC6\u7CFB\u7EDF\uFF09
-
-\u6BCF\u6B21\u4F1A\u8BDD\u5F00\u59CB\u65F6\uFF0C\u68C0\u67E5 \`memory-bank/\` \u76EE\u5F55\uFF1A
-
-1. **\u5B58\u5728** \u2192 \u8BFB\u53D6 \`memory-bank/brief.md\` + \`memory-bank/active.md\` \u83B7\u53D6\u9879\u76EE\u4E0A\u4E0B\u6587
-2. **\u4E0D\u5B58\u5728** \u2192 \u9996\u6B21\u5DE5\u4F5C\u65F6\u626B\u63CF\u9879\u76EE\u7ED3\u6784\uFF08README.md\u3001pyproject.toml \u7B49\uFF09\uFF0C\u521B\u5EFA \`memory-bank/\` \u5E76\u751F\u6210 \`brief.md\` + \`tech.md\`
-
-\u5DE5\u4F5C\u8FC7\u7A0B\u4E2D\uFF0C\u68C0\u6D4B\u5230\u4EE5\u4E0B\u4E8B\u4EF6\u65F6\u6309 \`/memory-bank\` skill \u89C4\u5219\u5199\u5165\uFF1A
-- **\u65B0\u9700\u6C42**\uFF1A\u521B\u5EFA \`requirements/REQ-xxx.md\`
-- **\u6280\u672F\u51B3\u7B56**\uFF1A\u8FFD\u52A0\u5230 \`patterns.md\`
-- **\u7ECF\u9A8C\u6559\u8BAD**\uFF08bug/\u6027\u80FD/\u96C6\u6210\u8E29\u5751\uFF09\uFF1A\u521B\u5EFA \`learnings/xxx.md\`
-
-\u5199\u5165\u524D\u8F93\u51FA\u8BA1\u5212\uFF0C\u7B49\u5F85\u7528\u6237\u786E\u8BA4\u3002\u8BE6\u7EC6\u89C4\u5219\u89C1 \`~/.claude/skills/memory-bank/SKILL.md\`\u3002
-${SENTINEL_END}`;
+var VERSION = "5.0.0";
 var colors = {
   reset: "\x1B[0m",
   bold: "\x1B[1m",
@@ -168,7 +151,7 @@ async function cleanupBackups(undoStack) {
 }
 async function installSkillFiles(packageRoot, undoStack, manifestFiles) {
   const srcDir = join(packageRoot, "skill", "memory-bank");
-  const destDir = join(homedir(), ".claude", "skills", "memory-bank");
+  const destDir = join(homedir(), ".config", "opencode", "skill", "memory-bank");
   if (!await exists(srcDir)) {
     throw new Error(`Skill source not found: ${srcDir}`);
   }
@@ -247,39 +230,6 @@ async function configureOpencodeJson(undoStack) {
     details: changes.join(", ") || "Already configured"
   };
 }
-async function configureClaudeMd(undoStack) {
-  const claudeMdPath = join(homedir(), ".claude", "CLAUDE.md");
-  let content = "";
-  let existed = false;
-  if (await exists(claudeMdPath)) {
-    existed = true;
-    content = await fs.readFile(claudeMdPath, "utf-8");
-  }
-  const beginIdx = content.indexOf(SENTINEL_BEGIN);
-  const endIdx = content.indexOf(SENTINEL_END);
-  let newContent;
-  let modified = false;
-  if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
-    const before = content.slice(0, beginIdx);
-    const after = content.slice(endIdx + SENTINEL_END.length);
-    newContent = before + CLAUDE_MD_BLOCK + after;
-    modified = newContent !== content;
-  } else {
-    newContent = content.trimEnd() + `
-
-` + CLAUDE_MD_BLOCK + `
-`;
-    modified = true;
-  }
-  if (modified) {
-    await atomicWriteFile(claudeMdPath, newContent, undoStack);
-  }
-  return {
-    step: "Configuring CLAUDE.md",
-    status: modified ? existed ? "updated" : "created" : "already-configured",
-    details: modified ? "Added startup instructions" : "Already configured"
-  };
-}
 async function ensurePluginDependencies(undoStack) {
   const packageJsonPath = join(homedir(), ".config", "opencode", "package.json");
   let pkg = { dependencies: {} };
@@ -321,7 +271,7 @@ async function ensurePluginDependencies(undoStack) {
   };
 }
 async function writeManifest(manifestFiles, undoStack) {
-  const manifestPath = join(homedir(), ".claude", "skills", "memory-bank", ".manifest.json");
+  const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json");
   const manifest = {
     version: VERSION,
     installedAt: new Date().toISOString(),
@@ -357,27 +307,23 @@ ${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}
   const manifestFiles = [];
   const results = [];
   try {
-    logStep(1, 6, "Installing skill files...");
+    logStep(1, 5, "Installing skill files...");
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles);
     logDetail(r1.details || "");
     results.push(r1);
-    logStep(2, 6, "Installing plugin...");
+    logStep(2, 5, "Installing plugin...");
     const r2 = await installPluginFile(packageRoot, undoStack, manifestFiles);
     logDetail(r2.details || "");
     results.push(r2);
-    logStep(3, 6, "Configuring opencode.json...");
+    logStep(3, 5, "Configuring opencode.json...");
     const r3 = await configureOpencodeJson(undoStack);
     logDetail(r3.details || "");
     results.push(r3);
-    logStep(4, 6, "Configuring CLAUDE.md...");
-    const r4 = await configureClaudeMd(undoStack);
+    logStep(4, 5, "Ensuring plugin dependencies...");
+    const r4 = await ensurePluginDependencies(undoStack);
     logDetail(r4.details || "");
     results.push(r4);
-    logStep(5, 6, "Ensuring plugin dependencies...");
-    const r5 = await ensurePluginDependencies(undoStack);
-    logDetail(r5.details || "");
-    results.push(r5);
-    logStep(6, 6, "Installing dependencies...");
+    logStep(5, 5, "Installing dependencies...");
     const bunSuccess = await runBunInstall();
     if (bunSuccess) {
       logDetail("Dependencies ready");
@@ -411,7 +357,7 @@ ${colors.bold}Memory Bank Skill Doctor v${VERSION}${colors.reset}
   const checks = [
     {
       name: "Skill files",
-      path: join(homedir(), ".claude", "skills", "memory-bank", "SKILL.md")
+      path: join(homedir(), ".config", "opencode", "skill", "memory-bank", "SKILL.md")
     },
     {
       name: "Plugin file",
@@ -420,10 +366,6 @@ ${colors.bold}Memory Bank Skill Doctor v${VERSION}${colors.reset}
     {
       name: "OpenCode config",
       path: join(homedir(), ".config", "opencode", "opencode.json")
-    },
-    {
-      name: "CLAUDE.md",
-      path: join(homedir(), ".claude", "CLAUDE.md")
     },
     {
       name: "Plugin dependencies",
@@ -442,7 +384,7 @@ ${colors.bold}Memory Bank Skill Doctor v${VERSION}${colors.reset}
       allOk = false;
     }
   }
-  const manifestPath = join(homedir(), ".claude", "skills", "memory-bank", ".manifest.json");
+  const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json");
   if (await exists(manifestPath)) {
     try {
       const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"));
