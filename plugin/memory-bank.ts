@@ -53,6 +53,7 @@ interface SessionMeta {
   planOutputted: boolean
   promptInProgress: boolean  // Prevent re-entrancy during prompt calls
   userMessageReceived: boolean  // Track if a new user message was received since last reminder
+  sessionNotified: boolean  // Track if context notification was already sent this session
 }
 
 interface MemoryBankContextResult {
@@ -224,7 +225,7 @@ async function checkMemoryBankExists(
 function getSessionMeta(sessionId: string, fallbackRoot: string): SessionMeta {
   let meta = sessionMetas.get(sessionId)
   if (!meta) {
-    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false }
+    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false }
     sessionMetas.set(sessionId, meta)
   }
   return meta
@@ -407,6 +408,12 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       return
     }
 
+    // Only notify once per session
+    if (meta.sessionNotified) {
+      log.debug("Context notification skipped (session already notified)", { sessionId, messageId })
+      return
+    }
+
     if (meta.notifiedMessageIds.has(messageId)) {
       log.debug("Context notification skipped (already notified for this message)", { sessionId, messageId })
       return
@@ -442,6 +449,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         },
       })
       meta.notifiedMessageIds.add(messageId)
+      meta.sessionNotified = true  // Mark session as notified
       if (meta.notifiedMessageIds.size > 100) {
         const first = meta.notifiedMessageIds.values().next().value
         if (first) meta.notifiedMessageIds.delete(first)
@@ -664,7 +672,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
 
         if (event.type === "session.created") {
-          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false })
+          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false })
           log.info("Session created", { sessionId })
         }
 
