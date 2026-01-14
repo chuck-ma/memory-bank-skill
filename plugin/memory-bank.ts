@@ -54,6 +54,7 @@ interface SessionMeta {
   promptInProgress: boolean  // Prevent re-entrancy during prompt calls
   userMessageReceived: boolean  // Track if a new user message was received since last reminder
   sessionNotified: boolean  // Track if context notification was already sent this session
+  ignoreNextMessageUpdated: boolean  // Skip the next message.updated if it's plugin-generated
 }
 
 interface MemoryBankContextResult {
@@ -232,7 +233,7 @@ async function checkMemoryBankExists(
 function getSessionMeta(sessionId: string, fallbackRoot: string): SessionMeta {
   let meta = sessionMetas.get(sessionId)
   if (!meta) {
-    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false }
+    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, ignoreNextMessageUpdated: false }
     sessionMetas.set(sessionId, meta)
   }
   return meta
@@ -440,10 +441,11 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 - Bug修复/踩坑 → learnings/
 - 焦点变更 → active.md
 
-操作：加载 \`/skill memory-bank\` 按规范处理。`
+操作：请加载 memory-bank skill，按规范输出更新计划或更新内容（无需 slash command）。`
 
     try {
       meta.promptInProgress = true
+      meta.ignoreNextMessageUpdated = true
       await client.session.prompt({
         path: { id: sessionId },
         body: {
@@ -458,6 +460,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       }
       log.info("Context notification sent", { sessionId, messageId, files: result.files.length, totalChars: result.totalChars })
     } catch (err) {
+      meta.ignoreNextMessageUpdated = false
       log.error("Failed to send context notification:", String(err))
     } finally {
       meta.promptInProgress = false
@@ -606,17 +609,19 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
     try {
       meta.promptInProgress = true
+      meta.ignoreNextMessageUpdated = true
       await client.session.prompt({
         path: { id: sessionId },
         body: {
           parts: [{
             type: "text",
-            text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n本轮检测到以下变更：${filesSection}\n**触发事件**：\n${triggers.join("\n")}\n\n**操作**：加载 \`/skill memory-bank\` 处理更新。`,
+            text: `## [SYSTEM REMINDER - Memory Bank Update]\n\n本轮检测到以下变更：${filesSection}\n**触发事件**：\n${triggers.join("\n")}\n\n**操作**：请加载 memory-bank skill，按规范更新（无需 slash command）。`,
           }],
         },
       })
       log.info("UPDATE reminder sent successfully", { sessionId, root: projectRoot })
     } catch (promptErr) {
+      meta.ignoreNextMessageUpdated = false
       log.error("Failed to send UPDATE reminder:", String(promptErr))
     } finally {
       meta.promptInProgress = false
@@ -674,7 +679,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
 
         if (event.type === "session.created") {
-          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false })
+          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, ignoreNextMessageUpdated: false })
           log.info("Session created", { sessionId })
         }
 
@@ -691,10 +696,25 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
         if (event.type === "message.updated") {
           const message = info // info IS the message for message.updated
+          const meta = getSessionMeta(sessionId, projectRoot)
+          const rawContent = JSON.stringify(message?.content || "")
+
+          if (meta.ignoreNextMessageUpdated && isPluginGeneratedPrompt(rawContent)) {
+            meta.ignoreNextMessageUpdated = false
+            log.debug("message.updated skipped (plugin prompt)", { sessionId })
+            return
+          }
+          if (meta.ignoreNextMessageUpdated) {
+            meta.ignoreNextMessageUpdated = false
+          }
+
+          if (isPluginGeneratedPrompt(rawContent)) {
+            log.debug("message.updated skipped (plugin prompt)", { sessionId })
+            return
+          }
+
           if (message?.role === "user") {
-            const meta = getSessionMeta(sessionId, projectRoot)
-            const rawContent = JSON.stringify(message.content || "")
-            if (meta.promptInProgress || isPluginGeneratedPrompt(rawContent)) {
+            if (meta.promptInProgress) {
               log.debug("message.updated skipped (plugin prompt or prompt in progress)", { sessionId })
               return
             }
