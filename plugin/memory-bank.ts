@@ -89,6 +89,13 @@ function maxChars(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_MAX_CHARS
 }
 
+function isPluginGeneratedPrompt(content: string): boolean {
+  return (
+    content.includes("## [Memory Bank]") ||
+    content.includes("## [SYSTEM REMINDER - Memory Bank")
+  )
+}
+
 function createLogger(client: PluginClient) {
   let pending: Promise<void> = Promise.resolve()
 
@@ -685,8 +692,14 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         if (event.type === "message.updated") {
           const message = info // info IS the message for message.updated
           if (message?.role === "user") {
-            const content = JSON.stringify(message.content || "").toLowerCase()
             const meta = getSessionMeta(sessionId, projectRoot)
+            const rawContent = JSON.stringify(message.content || "")
+            if (meta.promptInProgress || isPluginGeneratedPrompt(rawContent)) {
+              log.debug("message.updated skipped (plugin prompt or prompt in progress)", { sessionId })
+              return
+            }
+
+            const content = rawContent.toLowerCase()
             const targetRoot = meta.lastActiveRoot || projectRoot
             const state = getRootState(sessionId, targetRoot)
 
