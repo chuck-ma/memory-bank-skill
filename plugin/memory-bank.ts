@@ -234,8 +234,7 @@ async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<Memo
     `  - 修复了 bug 或踩坑经验（\"原来问题是...\"、\"这个坑是...\"、\"发现...\"）→ learnings/\n` +
     `  - AI 修改了代码/配置文件 → active.md（如涉及 bug 修复则同时 learnings/）\n` +
     `  - 当前任务完成，焦点切换 → active.md\n` +
-    `- **Todo 完成检查（必须）**：标记最后一个 todo 为 completed 后，检查是否命中上述触发场景。如命中 → 输出更新计划\n` +
-    `- **初始化检查（必须）**：如 memory-bank/ 不存在且有代码文件 → 扫描项目并创建 brief.md + tech.md\n\n` +
+    `- **Todo 创建规则（必须）**：创建 todo 时，最后一项必须是"更新 Memory Bank"（检查触发场景并更新相应文件）\n\n` +
     `---\n\n`
 
   const wrapped =
@@ -705,8 +704,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         `# Memory Bank 未初始化\n\n` +
         `项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n` +
         `**AI 行为指令**：\n` +
-        `- 创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md）\n` +
-        `- 完成初始化后，按正常流程更新 active.md\n` +
+        `- **Todo 创建规则（必须）**：创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md），最后一项必须是"更新 Memory Bank"（更新 active.md）\n` +
         `${SENTINEL_CLOSE}`
       output.system.push(initInstruction)
     },
@@ -726,8 +724,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         `# Memory Bank 未初始化\n\n` +
         `项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n` +
         `**AI 行为指令**：\n` +
-        `- 创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md）\n` +
-        `- 完成初始化后，按正常流程更新 active.md\n` +
+        `- **Todo 创建规则（必须）**：创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md），最后一项必须是"更新 Memory Bank"（更新 active.md）\n` +
         `${SENTINEL_CLOSE}`
       output.context.push(initInstruction)
     },

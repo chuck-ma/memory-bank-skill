@@ -2,14 +2,17 @@
 
 ## 刚完成
 
-### 修复 Memory Bank 更新遗漏问题
+### 修复 Todo 创建时遗漏 Memory Bank 更新
 
-Todo 驱动的工作流容易遗忘 Memory Bank 沉淀步骤：
+问题：AI 创建 todo 时没有包含 Memory Bank 更新任务，导致沉淀步骤被跳过。
 
-- ✅ plugin/memory-bank.ts：AI 行为指令新增 "Todo 完成检查（必须）"
-- ✅ plugin/memory-bank.ts：没有 memory-bank 时注入初始化指令（todo 第一项）
-- ✅ skill/memory-bank/SKILL.md：步骤 1 改为"创建 todo 时第一项必须是初始化"
-- ✅ skill/memory-bank/SKILL.md：步骤 6 改为明确触发条件
+解决方案：将"事后检查"改为"事前规划"：
+- ✅ plugin/memory-bank.ts：新增 **Todo 创建规则**，移除冗余的 Todo 完成检查和初始化检查
+- ✅ skill/memory-bank/SKILL.md：每轮行为规范同步更新
+
+核心改变：
+- 已有 memory-bank → 最后一项必须是"更新 Memory Bank"
+- 没有 memory-bank → 第一项是"初始化"，最后一项是"更新"
 
 ## 下一步
 

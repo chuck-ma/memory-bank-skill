@@ -18,21 +18,25 @@ AI 被 TODO CONTINUATION hook 驱动完成技术任务，但 Memory Bank 从不�
 
 ## 解决方案
 
-### 1. Todo 完成检查（已有 memory-bank）
+### v1: Todo 完成检查（已废弃）
 
-在 plugin 的 AI 行为指令和 SKILL.md 中明确：
+在 todo 完成后检查是否需要更新 Memory Bank。
 
-> 标记最后一个 todo 为 completed 后，必须检查是否触发 Memory Bank 更新
+问题：事后检查容易被遗忘，且与 Todo 创建规则冲突。
 
-这样 Todo 完成时会自然触发检查，而不依赖单独的 reminder 机制。
+### v2: Todo 创建规则（当前方案）
 
-### 2. 初始化提醒（没有 memory-bank）
+将"事后检查"改为"事前规划"：
 
-当 memory-bank 目录不存在时，在 system prompt 中注入：
+| 场景 | 规则 |
+|------|------|
+| 已有 memory-bank | 创建 todo 时，**最后一项**必须是"更新 Memory Bank" |
+| 没有 memory-bank | 创建 todo 时，**第一项**是"初始化 Memory Bank"，**最后一项**是"更新 Memory Bank" |
 
-> 创建 todo 时，第一项必须是"初始化 Memory Bank"
-
-这样 AI 开始工作时就会先初始化。
+优势：
+- Memory Bank 更新始终在 todo 列表中，不会被遗忘
+- 逻辑简单，只有一条规则
+- 移除了冗余的 Todo 完成检查和初始化检查
 
 ## 相关文件
 

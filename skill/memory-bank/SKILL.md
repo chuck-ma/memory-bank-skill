@@ -259,7 +259,6 @@ Files updated:
 ```
 1. Bootstrap 检查（每次用户对话）
    └─ 检测 memory-bank/ 是否存在
-   └─ 不存在且有代码文件 → 创建 todo 时第一项必须是"初始化 Memory Bank"
 
 2. 固定加载
    └─ 读取 brief.md + active.md
@@ -272,10 +271,13 @@ Files updated:
    └─ 按预算限制加载
 
 5. 处理用户请求
+   └─ 创建 todo 时：
+      - 已有 memory-bank/ → 最后一项必须是"更新 Memory Bank"
+      - 没有 memory-bank/ → 第一项是"初始化 Memory Bank"，最后一项是"更新 Memory Bank"
    └─ 正常工作
 
-6. Todo 完成检查（必须）
-   └─ 标记最后一个 todo 为 completed 后，立即检查：
+6. 执行"更新 Memory Bank" todo 时
+   └─ 检查触发场景：
       - 修改了代码/配置文件 → 更新 active.md
       - 修复了 bug / 踩坑经验 → 创建 learnings/xxx.md
       - 做了技术决策 → 追加 patterns.md
