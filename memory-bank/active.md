@@ -2,29 +2,18 @@
 
 ## 刚完成
 
-### 修复 Memory Bank 触发条件
+### 修复 Memory Bank 更新遗漏问题
 
-修复 AI 行为指令中的触发逻辑问题：
+Todo 驱动的工作流容易遗忘 Memory Bank 沉淀步骤：
 
-- ✅ "首轮回复" → "每次回复"（确保每次对话都确认 Memory Bank）
-- ✅ 新增触发条件：AI 修改了代码/配置文件 → active.md
-- ✅ 更新 SKILL.md 中的 Bootstrap 流程描述
-
-### v5.0.0 - OpenCode 原生路径
-
-切换到 OpenCode 原生 skill 路径，移除 Claude 兼容层：
-
-- ✅ Skill 安装路径：`~/.claude/skills/` → `~/.config/opencode/skill/`
-- ✅ 移除 CLAUDE.md 配置逻辑（OpenCode 不支持）
-- ✅ 更新 doctor 检查路径
-- ✅ 更新 manifest 路径
-- ✅ 简化 README.md
+- ✅ plugin/memory-bank.ts：AI 行为指令新增 "Todo 完成检查（必须）"
+- ✅ plugin/memory-bank.ts：没有 memory-bank 时注入初始化指令（todo 第一项）
+- ✅ skill/memory-bank/SKILL.md：步骤 1 改为"创建 todo 时第一项必须是初始化"
+- ✅ skill/memory-bank/SKILL.md：步骤 6 改为明确触发条件
 
 ## 下一步
 
-- [ ] 构建并测试安装
-- [ ] 发布 v5.0.0 到 npm
-- [ ] 清理旧的 `~/.claude/skills/memory-bank/` 目录
+- [ ] 发布到 npm
 
 ## 阻塞项
 

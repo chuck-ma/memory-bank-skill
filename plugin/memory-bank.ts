@@ -234,7 +234,8 @@ async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<Memo
     `  - 修复了 bug 或踩坑经验（\"原来问题是...\"、\"这个坑是...\"、\"发现...\"）→ learnings/\n` +
     `  - AI 修改了代码/配置文件 → active.md（如涉及 bug 修复则同时 learnings/）\n` +
     `  - 当前任务完成，焦点切换 → active.md\n` +
-    `- 触发后：工作完成时按 memory-bank skill 规范输出更新计划\n\n` +
+    `- **Todo 完成检查（必须）**：标记最后一个 todo 为 completed 后，检查是否命中上述触发场景。如命中 → 输出更新计划\n` +
+    `- **初始化检查（必须）**：如 memory-bank/ 不存在且有代码文件 → 扫描项目并创建 brief.md + tech.md\n\n` +
     `---\n\n`
 
   const wrapped =
@@ -693,18 +694,42 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       if (output.system.some((s) => s.includes(SENTINEL_OPEN))) return
 
       const ctx = await buildMemoryBankContext(projectRoot)
-      if (!ctx) return
+      if (ctx) {
+        output.system.push(ctx)
+        return
+      }
 
-      output.system.push(ctx)
+      // No memory-bank exists - inject init instruction
+      const initInstruction =
+        `${SENTINEL_OPEN}\n` +
+        `# Memory Bank 未初始化\n\n` +
+        `项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n` +
+        `**AI 行为指令**：\n` +
+        `- 创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md）\n` +
+        `- 完成初始化后，按正常流程更新 active.md\n` +
+        `${SENTINEL_CLOSE}`
+      output.system.push(initInstruction)
     },
 
     "experimental.session.compacting": async (_input, output) => {
       if (output.context.some((s) => s.includes(SENTINEL_OPEN))) return
 
       const ctx = await buildMemoryBankContext(projectRoot)
-      if (!ctx) return
+      if (ctx) {
+        output.context.push(ctx)
+        return
+      }
 
-      output.context.push(ctx)
+      // No memory-bank exists - inject init instruction
+      const initInstruction =
+        `${SENTINEL_OPEN}\n` +
+        `# Memory Bank 未初始化\n\n` +
+        `项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n` +
+        `**AI 行为指令**：\n` +
+        `- 创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md）\n` +
+        `- 完成初始化后，按正常流程更新 active.md\n` +
+        `${SENTINEL_CLOSE}`
+      output.context.push(initInstruction)
     },
 
     // ========================================================================

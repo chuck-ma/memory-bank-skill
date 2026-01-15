@@ -259,6 +259,7 @@ Files updated:
 ```
 1. Bootstrap 检查（每次用户对话）
    └─ 检测 memory-bank/ 是否存在
+   └─ 不存在且有代码文件 → 创建 todo 时第一项必须是"初始化 Memory Bank"
 
 2. 固定加载
    └─ 读取 brief.md + active.md
@@ -273,8 +274,13 @@ Files updated:
 5. 处理用户请求
    └─ 正常工作
 
-6. 触发写入规则
-   └─ 检测事件，输出 memory_ops 计划
+6. Todo 完成检查（必须）
+   └─ 标记最后一个 todo 为 completed 后，立即检查：
+      - 修改了代码/配置文件 → 更新 active.md
+      - 修复了 bug / 踩坑经验 → 创建 learnings/xxx.md
+      - 做了技术决策 → 追加 patterns.md
+      - 新需求确认 → 创建 requirements/REQ-xxx.md
+   └─ 命中任一条件 → 输出 memory_ops 计划
 
 7. 执行写入
    └─ 用户确认后执行
