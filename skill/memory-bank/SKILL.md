@@ -120,6 +120,7 @@ memory-bank/
 | 事件类型 | 触发条件 | 创建/更新 |
 |---------|---------|----------|
 | **New Entity** | 确定新需求/模块/API | requirements/REQ-xxx.md 或 docs/modules/xxx.md |
+| **Design** | 新设计 / 重新设计 / 设计变更 | docs/design-{slug}.md（已存在则更新） |
 | **Decision** | 技术选型确定，用户认可 | patterns.md |
 | **Learning** | Bug 修复/性能优化/集成踩坑 | learnings/{type}/{date}-{slug}.md |
 
@@ -283,7 +284,9 @@ Files updated:
 
 6. 执行"更新 Memory Bank" todo 时
    └─ 检查触发场景：
-      - 方案讨论确定 → 创建 memory-bank/docs/design-xxx.md
+      - 方案讨论确定 / 设计变更 → 检查 docs/design-*.md 是否已存在
+        - 存在 → 更新该文档
+        - 不存在 → 创建新文档
       - 修改了代码/配置文件 → 更新 active.md
       - 修复了 bug / 踩坑经验 → 创建 learnings/xxx.md
       - 做了技术决策 → 追加 patterns.md

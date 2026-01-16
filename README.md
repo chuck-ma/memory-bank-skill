@@ -175,5 +175,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 5.0.0
-- **主要更新**: 切换到 OpenCode 原生 skill 路径（`~/.config/opencode/skill/`），移除 Claude 兼容层
+- **版本**: 5.2.0
+- **主要更新**: 增加 Design 设计文档支持，方案讨论确定时自动创建/更新 docs/design-*.md

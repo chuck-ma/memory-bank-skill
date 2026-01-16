@@ -24,7 +24,7 @@ import { homedir } from "os";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
-var VERSION = "5.0.0";
+var VERSION = "5.2.0";
 var colors = {
   reset: "\x1B[0m",
   bold: "\x1B[1m",
