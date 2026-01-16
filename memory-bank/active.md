@@ -2,17 +2,19 @@
 
 ## 刚完成
 
-### 修复 Todo 创建时遗漏 Memory Bank 更新
+### 文档驱动开发流程
 
-问题：AI 创建 todo 时没有包含 Memory Bank 更新任务，导致沉淀步骤被跳过。
+问题：方案讨论完成后直接写代码，最后才补文档。导致文档追着代码跑，容易遗漏或失真。
 
-解决方案：将"事后检查"改为"事前规划"：
-- ✅ plugin/memory-bank.ts：新增 **Todo 创建规则**，移除冗余的 Todo 完成检查和初始化检查
-- ✅ skill/memory-bank/SKILL.md：每轮行为规范同步更新
+解决方案：**文档优先** —— 方案讨论完成后，第一步是写设计文档，再写代码。
 
 核心改变：
-- 已有 memory-bank → 最后一项必须是"更新 Memory Bank"
-- 没有 memory-bank → 第一项是"初始化"，最后一项是"更新"
+- plugin/memory-bank.ts：新增 **文档驱动开发原则**
+  - 方案讨论完成后 → 先写 `memory-bank/docs/design-xxx.md`，再写代码
+  - 设计文档是契约，代码要符合文档
+  - 实现完成后回顾：如有偏差，决定改文档还是改实现
+- skill/memory-bank/SKILL.md：每轮行为规范同步更新
+- Todo 创建规则：方案讨论完成后开始落地，第一项是"写入设计文档到 memory-bank/docs/"
 
 ## 下一步
 

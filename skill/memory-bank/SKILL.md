@@ -271,13 +271,19 @@ Files updated:
    └─ 按预算限制加载
 
 5. 处理用户请求
+   └─ **文档驱动开发原则**：
+      - 方案讨论确定后 → 先写 memory-bank/docs/design-xxx.md，再写代码
+      - 设计文档是契约，代码要符合文档
+      - 实现完成后回顾：如有偏差，决定改文档还是改实现
    └─ 创建 todo 时：
+      - 方案讨论完成后开始落地 → 第一项是"写入设计文档到 memory-bank/docs/"
       - 已有 memory-bank/ → 最后一项必须是"更新 Memory Bank"
       - 没有 memory-bank/ → 第一项是"初始化 Memory Bank"，最后一项是"更新 Memory Bank"
    └─ 正常工作
 
 6. 执行"更新 Memory Bank" todo 时
    └─ 检查触发场景：
+      - 方案讨论确定 → 创建 memory-bank/docs/design-xxx.md
       - 修改了代码/配置文件 → 更新 active.md
       - 修复了 bug / 踩坑经验 → 创建 learnings/xxx.md
       - 做了技术决策 → 追加 patterns.md
