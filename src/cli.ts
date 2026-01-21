@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url"
 // Constants
 // ============================================================================
 
-const VERSION = "5.2.0"
+const VERSION = "5.3.0"
 // ============================================================================
 // Types
 // ============================================================================
@@ -243,36 +243,11 @@ async function installSkillFiles(
   }
 }
 
-async function installPluginFile(
-  packageRoot: string,
-  undoStack: UndoAction[],
-  manifestFiles: { path: string; sha256: string }[]
-): Promise<InstallResult> {
-  const srcPath = join(packageRoot, "plugin", "memory-bank.ts")
-  const destPath = join(homedir(), ".config", "opencode", "plugin", "memory-bank.ts")
-
-  if (!(await exists(srcPath))) {
-    throw new Error(`Plugin source not found: ${srcPath}`)
-  }
-
-  const existed = await exists(destPath)
-  const content = await fs.readFile(srcPath)
-  await atomicWriteFile(destPath, content, undoStack)
-  manifestFiles.push({ path: destPath, sha256: sha256(content) })
-
-  return {
-    step: "Installing plugin",
-    status: existed ? "updated" : "created",
-    details: destPath,
-  }
-}
-
-async function configureOpencodeJson(
+async function installPluginToConfig(
   undoStack: UndoAction[]
 ): Promise<InstallResult> {
   const configPath = join(homedir(), ".config", "opencode", "opencode.json")
-  const pluginPath = join(homedir(), ".config", "opencode", "plugin", "memory-bank.ts")
-  const pluginUrl = `file://${pluginPath}`
+  const pluginPackage = "memory-bank-skill"
 
   let config: any = {}
   let existed = false
@@ -291,7 +266,7 @@ async function configureOpencodeJson(
           JSON.stringify(
             {
               permission: { skill: "allow" },
-              plugin: [pluginUrl],
+              plugin: [pluginPackage],
             },
             null,
             2
@@ -310,13 +285,24 @@ async function configureOpencodeJson(
     modified = true
   }
 
-  // Ensure plugin array contains our plugin
+  // Ensure plugin array contains our plugin (npm package name)
   if (!Array.isArray(config.plugin)) {
     config.plugin = []
   }
-  if (!config.plugin.includes(pluginUrl)) {
-    config.plugin.push(pluginUrl)
-    changes.push("Added plugin entry")
+  
+  // Remove old file:// plugin URL if present
+  const oldPluginUrl = `file://${join(homedir(), ".config", "opencode", "plugin", "memory-bank.ts")}`
+  const oldPluginIndex = config.plugin.indexOf(oldPluginUrl)
+  if (oldPluginIndex !== -1) {
+    config.plugin.splice(oldPluginIndex, 1)
+    changes.push("Removed old file:// plugin reference")
+    modified = true
+  }
+  
+  // Add npm package name if not present
+  if (!config.plugin.includes(pluginPackage)) {
+    config.plugin.push(pluginPackage)
+    changes.push(`Added plugin: ${pluginPackage}`)
     modified = true
   }
 
@@ -326,61 +312,9 @@ async function configureOpencodeJson(
   }
 
   return {
-    step: "Configuring opencode.json",
+    step: "Configuring plugin in opencode.json",
     status: modified ? (existed ? "updated" : "created") : "already-configured",
     details: changes.join(", ") || "Already configured",
-  }
-}
-
-async function ensurePluginDependencies(
-  undoStack: UndoAction[]
-): Promise<InstallResult> {
-  const packageJsonPath = join(homedir(), ".config", "opencode", "package.json")
-
-  let pkg: any = { dependencies: {} }
-  let existed = false
-  let modified = false
-
-  if (await exists(packageJsonPath)) {
-    existed = true
-    try {
-      const content = await fs.readFile(packageJsonPath, "utf-8")
-      pkg = JSON.parse(content)
-    } catch (err) {
-      throw new Error(
-        `Failed to parse ${packageJsonPath}: ${err}\n\n` +
-          `Please fix the JSON manually, or add this to your config:\n\n` +
-          JSON.stringify(
-            {
-              dependencies: {
-                "@opencode-ai/plugin": "^1.1.14",
-              },
-            },
-            null,
-            2
-          )
-      )
-    }
-  }
-
-  if (!pkg.dependencies) {
-    pkg.dependencies = {}
-  }
-
-  if (!pkg.dependencies["@opencode-ai/plugin"]) {
-    pkg.dependencies["@opencode-ai/plugin"] = "^1.1.14"
-    modified = true
-  }
-
-  if (modified) {
-    const newContent = JSON.stringify(pkg, null, 2) + "\n"
-    await atomicWriteFile(packageJsonPath, newContent, undoStack)
-  }
-
-  return {
-    step: "Ensuring plugin dependencies",
-    status: modified ? (existed ? "updated" : "created") : "already-configured",
-    details: modified ? "Added @opencode-ai/plugin" : "Already present",
   }
 }
 
@@ -410,28 +344,6 @@ async function writeManifest(
 // Main Commands
 // ============================================================================
 
-async function runBunInstall(): Promise<boolean> {
-  const opencodeDir = join(homedir(), ".config", "opencode")
-  const nodeModulesPath = join(opencodeDir, "node_modules", "@opencode-ai", "plugin")
-  
-  // Check if dependencies already installed
-  if (await exists(nodeModulesPath)) {
-    return true // Already installed
-  }
-  
-  try {
-    const { execSync } = await import("node:child_process")
-    execSync("bun install", {
-      cwd: opencodeDir,
-      stdio: "pipe",
-      timeout: 60000,
-    })
-    return true
-  } catch (err) {
-    return false
-  }
-}
-
 async function install(): Promise<void> {
   log(`\n${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}\n`)
 
@@ -441,50 +353,23 @@ async function install(): Promise<void> {
   const results: InstallResult[] = []
 
   try {
-    // Step 1: Install skill files
-    logStep(1, 5, "Installing skill files...")
+    logStep(1, 2, "Installing skill files...")
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles)
     logDetail(r1.details || "")
     results.push(r1)
 
-    // Step 2: Install plugin
-    logStep(2, 5, "Installing plugin...")
-    const r2 = await installPluginFile(packageRoot, undoStack, manifestFiles)
+    logStep(2, 2, "Configuring plugin...")
+    const r2 = await installPluginToConfig(undoStack)
     logDetail(r2.details || "")
     results.push(r2)
 
-    // Step 3: Configure opencode.json
-    logStep(3, 5, "Configuring opencode.json...")
-    const r3 = await configureOpencodeJson(undoStack)
-    logDetail(r3.details || "")
-    results.push(r3)
-
-    // Step 4: Ensure plugin dependencies
-    logStep(4, 5, "Ensuring plugin dependencies...")
-    const r4 = await ensurePluginDependencies(undoStack)
-    logDetail(r4.details || "")
-    results.push(r4)
-
-    // Step 5: Run bun install
-    logStep(5, 5, "Installing dependencies...")
-    const bunSuccess = await runBunInstall()
-    if (bunSuccess) {
-      logDetail("Dependencies ready")
-    } else {
-      logDetail(`${colors.yellow}Run manually: cd ~/.config/opencode && bun install${colors.reset}`)
-    }
-
-    // Write manifest
     await writeManifest(manifestFiles, undoStack)
-
-    // Clean up backup files on success
     await cleanupBackups(undoStack)
 
-    // Summary
     const allSkipped = results.every((r) => r.status === "already-configured" || r.status === "skipped")
 
     log("")
-    if (allSkipped && bunSuccess) {
+    if (allSkipped) {
       logSuccess(`Already installed (v${VERSION})`)
     } else {
       logSuccess("Installation complete!")
@@ -504,40 +389,37 @@ async function install(): Promise<void> {
 async function doctor(): Promise<void> {
   log(`\n${colors.bold}Memory Bank Skill Doctor v${VERSION}${colors.reset}\n`)
 
-  const checks = [
-    {
-      name: "Skill files",
-      path: join(homedir(), ".config", "opencode", "skill", "memory-bank", "SKILL.md"),
-    },
-    {
-      name: "Plugin file",
-      path: join(homedir(), ".config", "opencode", "plugin", "memory-bank.ts"),
-    },
-    {
-      name: "OpenCode config",
-      path: join(homedir(), ".config", "opencode", "opencode.json"),
-    },
-    {
-      name: "Plugin dependencies",
-      path: join(homedir(), ".config", "opencode", "package.json"),
-    },
-  ]
-
   let allOk = true
 
-  for (const check of checks) {
-    const ok = await exists(check.path)
-    if (ok) {
-      log(`${colors.green}✓${colors.reset} ${check.name}`)
-      logDetail(check.path)
-    } else {
-      log(`${colors.red}✗${colors.reset} ${check.name}`)
-      logDetail(`Missing: ${check.path}`)
-      allOk = false
-    }
+  const skillPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", "SKILL.md")
+  const skillOk = await exists(skillPath)
+  if (skillOk) {
+    log(`${colors.green}✓${colors.reset} Skill files`)
+    logDetail(skillPath)
+  } else {
+    log(`${colors.red}✗${colors.reset} Skill files`)
+    logDetail(`Missing: ${skillPath}`)
+    allOk = false
   }
 
-  // Check manifest
+  const configPath = join(homedir(), ".config", "opencode", "opencode.json")
+  let pluginConfigured = false
+  if (await exists(configPath)) {
+    try {
+      const content = await fs.readFile(configPath, "utf-8")
+      const config = JSON.parse(content)
+      pluginConfigured = Array.isArray(config.plugin) && config.plugin.includes("memory-bank-skill")
+    } catch {}
+  }
+  if (pluginConfigured) {
+    log(`${colors.green}✓${colors.reset} Plugin configured in opencode.json`)
+    logDetail("memory-bank-skill")
+  } else {
+    log(`${colors.red}✗${colors.reset} Plugin not configured`)
+    logDetail("Add 'memory-bank-skill' to plugin array in opencode.json")
+    allOk = false
+  }
+
   const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json")
   if (await exists(manifestPath)) {
     try {
@@ -545,9 +427,7 @@ async function doctor(): Promise<void> {
       log("")
       log(`${colors.dim}Installed version: ${manifest.version}${colors.reset}`)
       log(`${colors.dim}Installed at: ${manifest.installedAt}${colors.reset}`)
-    } catch {
-      // Ignore manifest parse errors
-    }
+    } catch {}
   }
 
   log("")

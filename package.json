@@ -1,19 +1,19 @@
 {
   "name": "memory-bank-skill",
-  "version": "5.2.0",
+  "version": "5.3.0",
   "description": "Memory Bank - 项目记忆系统，让 AI 助手在每次对话中都能快速理解项目上下文",
   "type": "module",
+  "main": "dist/plugin.js",
   "bin": {
     "memory-bank-skill": "dist/cli.js"
   },
   "files": [
     "dist/",
-    "plugin/",
     "skill/",
     "templates/"
   ],
   "scripts": {
-    "build": "bun build src/cli.ts --outdir dist --target bun",
+    "build": "bun build src/cli.ts plugin/memory-bank.ts --outdir dist --target bun && mv dist/src/cli.js dist/cli.js && mv dist/plugin/memory-bank.js dist/plugin.js && rm -rf dist/plugin dist/src",
     "prepublishOnly": "bun run build",
     "test:install": "bun run build && bun ./dist/cli.js install",
     "test:doctor": "bun run build && bun ./dist/cli.js doctor"
@@ -34,6 +34,9 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.1.14"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
