@@ -27,5 +27,5 @@ bunx memory-bank-skill install
 
 ## 版本
 
-- 当前版本：5.2.0
-- 主要更新：增加 Design 设计文档支持，方案讨论确定时自动创建/更新 docs/design-*.md
+- 当前版本：5.3.0
+- 主要更新：Plugin 改为 npm 包形式安装，在 opencode.json 中直接配置包名
