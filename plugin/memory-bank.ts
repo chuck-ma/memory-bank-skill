@@ -3,7 +3,7 @@
  *
  * Combines two functions:
  * 1. Auto-inject Memory Bank content into system prompt (loader)
- * 2. Remind AI to update Memory Bank when session ends (reminder)
+ * 2. Remind AI to update Memory Bank when session ends (currently disabled)
  */
 import type { Plugin, PluginClient } from "@opencode-ai/plugin"
 import { stat, readFile, access } from "node:fs/promises"
