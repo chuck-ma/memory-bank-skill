@@ -41,9 +41,9 @@ bunx memory-bank-skill doctor
 | 操作 | 目标路径 |
 |------|----------|
 | 复制 Skill 文件 | `~/.config/opencode/skill/memory-bank/` |
-| 复制 Plugin 文件 | `~/.config/opencode/plugin/memory-bank.ts` |
-| 配置 opencode.json | 添加 `permission.skill` 和插件注册 |
-| 安装依赖 | `~/.config/opencode/node_modules/` |
+| 配置 opencode.json | 添加 `permission.skill=allow`，注册插件包 `memory-bank-skill` |
+| 写入 manifest | `~/.config/opencode/skill/memory-bank/.manifest.json` |
+| 依赖安装 | 不自动执行；如需手动运行 `cd ~/.config/opencode && bun install` |
 
 ---
 
@@ -55,7 +55,7 @@ bunx memory-bank-skill doctor
 |------|---------|
 | **已有代码库** | 扫描 package.json/README 等，自动生成 brief.md + tech.md |
 | **新项目** | 不创建任何文件，等你开始工作后按需创建 |
-| **已有 Memory Bank** | 直接读取 brief.md + active.md，恢复上下文 |
+| **已有 Memory Bank** | 直接读取 brief.md + active.md + _index.md，恢复上下文 |
 
 ---
 
@@ -75,12 +75,17 @@ memory-bank/
 │
 ├── docs/                    # 技术文档
 │   ├── architecture.md
-│   └── modules/
+│   ├── design-*.md
+│   ├── modules/
+│   └── specs/
 │
-└── learnings/               # 经验沉淀
-    ├── bugs/
-    ├── performance/
-    └── integrations/
+├── learnings/               # 经验沉淀
+│   ├── bugs/
+│   ├── performance/
+│   └── integrations/
+│
+└── archive/                 # 归档文件（按月）
+    └── active_YYYY-MM.md
 ```
 
 ---
@@ -96,17 +101,21 @@ Memory Bank 包含一个 OpenCode 插件，提供两个核心功能：
 - 文件缓存 + mtime 检测，只有变更才重新读取
 - 12,000 字符上限，超出自动截断
 
-### 2. 自动提醒更新
+### 2. 自动提醒更新（当前禁用）
 
 AI 尝试停止时，检测是否需要更新 Memory Bank：
 - 检测文件修改（代码/配置/文档）
 - 检测用户消息关键词（新需求、bug、决策等）
 - 提醒初始化或更新
 
+> 注意：自动提醒链路当前在插件中整体暂时禁用（`evaluateAndFireReminder()` 未被调用），以下描述为历史行为。
+
+当前提醒禁用时，以下逃逸阀不会生效。
+
 **逃逸阀**：
 - 回复"无需更新"或"已检查" → 本次会话不再提醒
 - 回复"跳过初始化" → 本次会话不再提醒初始化
-- 环境变量 `MEMORY_BANK_DISABLED=1` → 完全禁用
+- 环境变量 `MEMORY_BANK_DISABLED=1|true` → 禁用提醒链路（上下文注入仍然生效）
 
 ---
 
@@ -169,11 +178,11 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 | Skill 主文件 | `~/.config/opencode/skill/memory-bank/SKILL.md` |
 | 文件模板 | `~/.config/opencode/skill/memory-bank/references/templates.md` |
 | 高级规则 | `~/.config/opencode/skill/memory-bank/references/advanced-rules.md` |
-| 插件 | `~/.config/opencode/plugin/memory-bank.ts` |
+| 插件 | `opencode.json` 的 `plugin` 数组（`memory-bank-skill`） |
 
 ---
 
 ## 版本
 
-- **版本**: 5.2.0
+- **版本**: 5.3.2
 - **主要更新**: 增加 Design 设计文档支持，方案讨论确定时自动创建/更新 docs/design-*.md
