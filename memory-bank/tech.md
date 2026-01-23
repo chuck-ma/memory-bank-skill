@@ -17,8 +17,8 @@
 ## 构建
 
 ```bash
-# 构建 CLI
-bun build src/cli.ts --outdir dist --target bun
+# 构建 CLI + Plugin
+bun run build
 
 # 本地测试
 bun ./dist/cli.js install
@@ -49,7 +49,7 @@ memory-bank-skill/
 
 | 用途 | 路径 |
 |-----|------|
-| Skill 安装位置 | `~/.claude/skills/memory-bank/` |
-| Plugin 安装位置 | `~/.config/opencode/plugin/memory-bank.ts` |
+| Skill 安装位置 | `~/.config/opencode/skill/memory-bank/` |
+| 插件配置 | `~/.config/opencode/opencode.json` 的 `plugin` 数组（`memory-bank-skill`） |
 | 配置文件 | `~/.config/opencode/opencode.json` |
-| 启动指令 | `~/.claude/CLAUDE.md` |
+| 启动指令 | `~/.config/opencode/AGENTS.md` |

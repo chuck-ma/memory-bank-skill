@@ -1,23 +1,35 @@
-# 当前焦点
+# Active Context
 
-## 刚完成
+<!-- MACHINE_BLOCK_START -->
+> 更新于: 2026-01-23
 
-### Plugin 改为 npm 包形式安装 (v5.3.0)
+## 当前焦点
 
-问题：之前 plugin 需要复制到 `~/.config/opencode/plugin/` 目录，管理不方便。
-
-解决方案：Plugin 作为 npm 包的 main 入口发布，在 opencode.json 中直接引用包名。
-
-核心改变：
-- package.json：添加 `main: dist/plugin.js`，`peerDependencies` 包含 `@opencode-ai/plugin`
-- 构建脚本：同时编译 CLI 和 Plugin 到 `dist/`
-- CLI：简化为 2 步（安装 skill 文件 + 配置 opencode.json 中的包名）
-- opencode.json 配置：`"plugin": ["memory-bank-skill"]`
+- 发布 5.3.2 并完成本地安装/提交
 
 ## 下一步
 
-- [ ] 发布 v5.3.0 到 npm
+- [ ] 等待 bunx registry 刷新后重新安装确认 5.3.2
+- [ ] 提交归档与文档一致性变更
+
+## 已完成（待归档）
+
+- [x] Oracle 复核归档方案与文档
+- [x] npm 发布 5.3.2
+- [x] 本地安装尝试（仍解析 5.3.0）
 
 ## 阻塞项
 
-无
+- 无
+
+## 最近变更
+
+| 日期 | 变更 |
+|------|------|
+| 2026-01-23 | 发布 5.3.2，更新归档与安装/提醒文档一致性 |
+<!-- MACHINE_BLOCK_END -->
+
+<!-- USER_BLOCK_START -->
+## 用户笔记
+{用户自由编辑区}
+<!-- USER_BLOCK_END -->
