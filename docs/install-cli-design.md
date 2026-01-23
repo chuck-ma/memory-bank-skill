@@ -2,7 +2,7 @@
 
 > 版本: 1.0
 > 日期: 2026-01-13
-> 状态: 待实现
+> 状态: 已实现
 
 ## 目标
 
@@ -26,13 +26,10 @@ bunx memory-bank-skill install
 memory-bank-skill/
 ├── package.json              # npm 包配置
 ├── src/
-│   ├── cli.ts                # CLI 入口
-│   ├── installer.ts          # 安装逻辑
-│   ├── atomic.ts             # 原子写入工具
-│   └── config.ts             # 配置常量
-├── dist/                     # 编译输出（发布时包含）
+│   └── cli.ts                # CLI 入口
 ├── plugin/
 │   └── memory-bank.ts        # OpenCode 插件
+├── dist/                     # 编译输出（发布时包含）
 ├── skill/
 │   └── memory-bank/          # Skill 文件
 │       ├── SKILL.md
@@ -50,20 +47,20 @@ memory-bank-skill/
 ```json
 {
   "name": "memory-bank-skill",
-  "version": "4.0.0",
+  "version": "5.3.2",
   "description": "Memory Bank - 项目记忆系统，让 AI 助手在每次对话中都能快速理解项目上下文",
   "type": "module",
+  "main": "dist/plugin.js",
   "bin": {
-    "memory-bank-skill": "./dist/cli.js"
+    "memory-bank-skill": "dist/cli.js"
   },
   "files": [
     "dist/",
-    "plugin/",
     "skill/",
     "templates/"
   ],
   "scripts": {
-    "build": "bun build src/cli.ts --outdir dist --target bun",
+    "build": "bun build src/cli.ts plugin/memory-bank.ts --outdir dist --target bun && mv dist/src/cli.js dist/cli.js && mv dist/plugin/memory-bank.js dist/plugin.js && rm -rf dist/plugin dist/src",
     "prepublishOnly": "bun run build"
   },
   "keywords": ["opencode", "plugin", "memory-bank", "ai", "context"],
@@ -78,34 +75,26 @@ memory-bank-skill/
 ### Step 1: 复制 Skill 文件
 
 - **源**: `skill/memory-bank/*`
-- **目标**: `~/.claude/skills/memory-bank/`
+- **目标**: `~/.config/opencode/skill/memory-bank/`
 - **幂等策略**: 覆盖 + 备份（如有差异）
 
-### Step 2: 复制 Plugin 文件
-
-- **源**: `plugin/memory-bank.ts`
-- **目标**: `~/.config/opencode/plugin/memory-bank.ts`
-- **幂等策略**: 覆盖 + 备份（如有差异）
-
-### Step 3: 配置 opencode.json
+### Step 2: 配置 opencode.json
 
 - **目标**: `~/.config/opencode/opencode.json`
 - **操作**:
   1. 确保 `permission.skill = "allow"`
-  2. 确保 `plugin` 数组包含插件路径
+  2. 确保 `plugin` 数组包含 `memory-bank-skill`
+  3. 移除旧的 `file://.../memory-bank.ts` 引用（如存在）
 - **幂等策略**: 存在则跳过
 
-### Step 4: 配置 CLAUDE.md
+安装完成后自动写入：`~/.config/opencode/skill/memory-bank/.manifest.json`。
 
-- **目标**: `~/.claude/CLAUDE.md`
-- **操作**: 插入/更新 Memory Bank 启动指令
-- **幂等策略**: Sentinel 块（存在则替换，不存在则追加）
+---
 
-### Step 5: 确保 Plugin 依赖
+## 手动步骤（installer 不执行）
 
-- **目标**: `~/.config/opencode/package.json`
-- **操作**: 确保 `dependencies["@opencode-ai/plugin"]` 存在
-- **幂等策略**: 存在则跳过
+- 如需在 `AGENTS.md` 中加入 Memory Bank 启动指令，请手动添加
+- 如需安装/更新 OpenCode 运行环境依赖，请手动执行 `cd ~/.config/opencode && bun install`
 
 ---
 
@@ -115,8 +104,8 @@ memory-bank-skill/
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Preflight Phase                       │
-│  (只读，任何失败立即中止)                                  │
+│                   Inline Validation                      │
+│  (检查在执行中完成，失败即回滚)                            │
 ├─────────────────────────────────────────────────────────┤
 │  1. 解析所有目标路径                                      │
 │  2. 检查目标目录权限                                      │
@@ -130,7 +119,7 @@ memory-bank-skill/
 │  (事务写入，失败则回滚)                                   │
 ├─────────────────────────────────────────────────────────┤
 │  For each operation:                                     │
-│    1. 备份原文件（如存在）→ .backup/                      │
+│    1. 备份原文件（如存在）→ *.backup                      │
 │    2. 写入临时文件 .tmp                                   │
 │    3. 原子 rename 到目标路径                              │
 │    4. 记录 undo action 到栈                               │
@@ -145,9 +134,9 @@ memory-bank-skill/
 ┌─────────────────────────────────────────────────────────┐
 │                    Manifest Phase                        │
 ├─────────────────────────────────────────────────────────┤
-│  写入 ~/.claude/skills/memory-bank/.manifest.json        │
+│  写入 ~/.config/opencode/skill/memory-bank/.manifest.json │
 │  {                                                       │
-│    "version": "4.0.0",                                   │
+│    "version": "5.3.2",                                   │
 │    "installedAt": "2026-01-13T10:15:08Z",               │
 │    "files": [                                            │
 │      { "path": "...", "sha256": "..." }                 │
@@ -155,6 +144,8 @@ memory-bank-skill/
 │  }                                                       │
 └─────────────────────────────────────────────────────────┘
 ```
+
+> 当前实现没有独立 Preflight 阶段，解析与校验在执行过程中完成（失败即回滚）。
 
 ### 原子写入函数
 
@@ -169,8 +160,9 @@ async function atomicWriteFile(
   
   // 1. 备份原文件（如存在）
   if (await exists(targetPath)) {
-    await fs.rename(targetPath, backupPath)
-    undoStack.push({ type: 'restore', from: backupPath, to: targetPath })
+    const original = await fs.readFile(targetPath)
+    await fs.writeFile(backupPath, original)
+    undoStack.push({ type: 'restore', path: targetPath, backupPath })
   } else {
     undoStack.push({ type: 'remove', path: targetPath })
   }
@@ -187,7 +179,9 @@ async function atomicWriteFile(
 
 ## Sentinel 块格式
 
-### CLAUDE.md 中的启动指令
+### AGENTS.md 中的启动指令（手动配置）
+
+> installer 不自动写入 AGENTS.md，以下仅作为手动配置示例。
 
 ```markdown
 <!-- memory-bank-skill:begin -->
@@ -195,22 +189,23 @@ async function atomicWriteFile(
 
 每次会话开始时，检查 `memory-bank/` 目录：
 
-1. **存在** → 读取 `memory-bank/brief.md` + `memory-bank/active.md` 获取项目上下文
+1. **存在** → 读取 `memory-bank/brief.md` + `memory-bank/active.md` + `memory-bank/_index.md` 获取项目上下文
 2. **不存在** → 首次工作时扫描项目结构（README.md、pyproject.toml 等），创建 `memory-bank/` 并生成 `brief.md` + `tech.md`
 
-工作过程中，检测到以下事件时按 `/memory-bank` skill 规则写入：
+工作过程中，检测到以下事件时按 `/skill memory-bank` 规则写入：
 - **新需求**：创建 `requirements/REQ-xxx.md`
 - **技术决策**：追加到 `patterns.md`
 - **经验教训**（bug/性能/集成踩坑）：创建 `learnings/xxx.md`
+- **归档**（active.md 超出阈值）：创建 `archive/active_YYYY-MM.md`
 
-写入前输出计划，等待用户确认。详细规则见 `~/.claude/skills/memory-bank/SKILL.md`。
+写入前输出计划，等待用户确认。详细规则见 `~/.config/opencode/skill/memory-bank/SKILL.md`。
 <!-- memory-bank-skill:end -->
 ```
 
 ### Sentinel 处理逻辑
 
 ```typescript
-function updateClaudeMd(content: string, block: string): string {
+function updateAgentsMd(content: string, block: string): string {
   const BEGIN = '<!-- memory-bank-skill:begin -->'
   const END = '<!-- memory-bank-skill:end -->'
   
@@ -234,15 +229,15 @@ function updateClaudeMd(content: string, block: string): string {
 | 情况 | 处理方式 |
 |------|----------|
 | `memory-bank/` 目录修改 | **不触发更新提醒**。Plugin 会检测到 memory-bank 文件变更并标记 `memoryBankUpdated=true`，但不会加入 `modifiedFiles` 列表，避免循环提醒 |
-| `~/.claude/` 不存在 | 自动创建目录 |
+| `~/.config/opencode/skill/` 不存在 | 自动创建目录 |
 | `~/.config/opencode/` 不存在 | 自动创建目录 |
 | `opencode.json` 不存在 | 创建新文件 |
 | `opencode.json` 格式错误 | 中止 + 打印手动修复指令 |
-| `CLAUDE.md` 不存在 | 创建新文件 |
-| 用户修改过 skill 文件 | 覆盖 + 备份到 `.backup/` |
-| 重复安装（相同版本） | 输出 "already up to date"，仍执行覆盖 |
+| `AGENTS.md` 不存在 | 不处理（手动创建） |
+| 用户修改过 skill 文件 | 覆盖 + 备份到 `*.backup` |
+| 重复安装（相同版本） | 输出 "Installation complete"，仍执行覆盖 |
 | 升级安装（新版本） | 输出 "upgrading X → Y" |
-| 文件系统权限不足 | Preflight 阶段失败，清晰报错 |
+| 文件系统权限不足 | 安装中失败并回滚，清晰报错 |
 
 ---
 
@@ -253,25 +248,16 @@ function updateClaudeMd(content: string, block: string): string {
 ```
 $ bunx memory-bank-skill install
 
-Memory Bank Skill Installer v4.0.0
+Memory Bank Skill Installer v5.3.2
 
-[1/5] Installing skill files...
-      → ~/.claude/skills/memory-bank/
-[2/5] Installing plugin...
-      → ~/.config/opencode/plugin/memory-bank.ts
-[3/5] Configuring opencode.json...
-      → Added permission.skill = "allow"
-      → Added plugin entry
-[4/5] Configuring CLAUDE.md...
-      → Added startup instructions
-[5/5] Ensuring plugin dependencies...
-      → @opencode-ai/plugin already present
+[1/2] Installing skill files...
+→ ~/.config/opencode/skill/memory-bank/
+[2/2] Configuring plugin...
+      → Added permission.skill = "allow", Added plugin: memory-bank-skill
 
 ✓ Installation complete!
 
-Next steps:
-  1. Run: cd ~/.config/opencode && bun install
-  2. Restart OpenCode
+Next step: Restart OpenCode
 ```
 
 ### 重复安装
@@ -279,20 +265,16 @@ Next steps:
 ```
 $ bunx memory-bank-skill install
 
-Memory Bank Skill Installer v4.0.0
+Memory Bank Skill Installer v5.3.2
 
-[1/5] Installing skill files...
-      → Already up to date
-[2/5] Installing plugin...
-      → Already up to date
-[3/5] Configuring opencode.json...
+[1/2] Installing skill files...
+      → ~/.config/opencode/skill/memory-bank/
+[2/2] Configuring plugin...
       → Already configured
-[4/5] Configuring CLAUDE.md...
-      → Already configured
-[5/5] Ensuring plugin dependencies...
-      → Already present
 
-✓ Already installed (v4.0.0)
+✓ Installation complete!
+
+Next step: Restart OpenCode
 ```
 
 ### 安装失败回滚
@@ -300,40 +282,39 @@ Memory Bank Skill Installer v4.0.0
 ```
 $ bunx memory-bank-skill install
 
-Memory Bank Skill Installer v4.0.0
+Memory Bank Skill Installer v5.3.2
 
-[1/5] Installing skill files...
-      → ~/.claude/skills/memory-bank/
-[2/5] Installing plugin...
-      → ~/.config/opencode/plugin/memory-bank.ts
-[3/5] Configuring opencode.json...
+[1/2] Installing skill files...
+→ ~/.config/opencode/skill/memory-bank/
+[2/2] Configuring plugin...
       ✗ Failed to parse JSON: Unexpected token at line 5
 
 Rolling back...
-      → Restored ~/.config/opencode/plugin/memory-bank.ts
-      → Restored ~/.claude/skills/memory-bank/
+→ Restored ~/.config/opencode/skill/memory-bank/SKILL.md
 
-✗ Installation failed
+✗ Installation failed: Failed to parse ~/.config/opencode/opencode.json
 
 Please fix ~/.config/opencode/opencode.json manually, or add this to your config:
 
 {
   "permission": { "skill": "allow" },
-  "plugin": ["file:///Users/you/.config/opencode/plugin/memory-bank.ts"]
+  "plugin": ["memory-bank-skill"]
 }
 ```
 
 ---
 
-## 未来扩展
+## 已实现
 
-### doctor 命令（可选）
+### doctor 命令
 
 ```bash
 bunx memory-bank-skill doctor
 ```
 
 检查安装状态、版本、配置完整性。
+
+## 未来扩展
 
 ### uninstall 命令（可选）
 
@@ -350,18 +331,18 @@ bunx memory-bank-skill uninstall
 ### 幂等性测试
 
 1. 首次安装 → 成功
-2. 立即再次安装 → 成功，输出 "already up to date"
+2. 立即再次安装 → 成功，输出 "Installation complete"
 3. 删除部分文件后安装 → 成功，修复缺失文件
 4. 修改 skill 文件后安装 → 成功，覆盖 + 备份
 
 ### 原子性测试
 
-1. 在 Step 3 模拟 JSON 解析失败 → 回滚 Step 1-2
-2. 在 Step 4 模拟写入权限失败 → 回滚 Step 1-3
+1. 在 Step 2 模拟 JSON 解析失败 → 回滚 Step 1
+2. 在 Step 2 模拟写入权限失败 → 回滚 Step 1
 3. 验证回滚后系统状态与安装前一致
 
 ### 边界测试
 
-1. 空系统（无 ~/.claude/, ~/.config/opencode/）→ 自动创建
-2. 已有自定义 CLAUDE.md 内容 → 追加不覆盖
+1. 空系统（无 ~/.config/opencode/）→ 自动创建
+2. AGENTS.md 手动配置不在 installer 范围
 3. opencode.json 已有其他 plugin → 追加不覆盖
