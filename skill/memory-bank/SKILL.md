@@ -28,21 +28,27 @@ memory-bank/
 ├── patterns.md              # 技术决策 + 代码约定
 │
 ├── requirements/            # 需求池
-│   ├── _index.md
 │   └── REQ-{ID}-{slug}.md
 │
 ├── docs/                    # 技术文档
-│   ├── _index.md
 │   ├── architecture.md
+│   ├── design-*.md
 │   ├── modules/
 │   └── specs/
 │
-└── learnings/               # 经验沉淀
-    ├── _index.md
-    ├── bugs/
-    ├── performance/
-    └── integrations/
+├── learnings/               # 经验沉淀
+│   ├── bugs/
+│   ├── performance/
+│   └── integrations/
+│
+└── archive/                 # 归档文件（按月）
+    └── active_YYYY-MM.md
 ```
+
+可选子索引（规模变大时启用）：
+- `requirements/_index.md`
+- `docs/_index.md`
+- `learnings/_index.md`
 
 ---
 
@@ -92,11 +98,10 @@ memory-bank/
 ### 每轮对话流程
 
 ```
-1. 固定加载：brief.md + active.md（如存在）
+1. 固定加载：brief.md + active.md + _index.md（如存在）
 
 2. 语义判断：
-   - 读取 _index.md
-   - 基于用户消息选择相关文件
+   - 基于 _index.md 选择相关文件
    - 输出决策：{ files: [...], reason: "..." }
 
 3. 按预算加载选中文件
@@ -123,6 +128,12 @@ memory-bank/
 | **Design** | 新设计 / 重新设计 / 设计变更 | docs/design-{slug}.md（已存在则更新） |
 | **Decision** | 技术选型确定，用户认可 | patterns.md |
 | **Learning** | Bug 修复/性能优化/集成踩坑 | learnings/{type}/{date}-{slug}.md |
+| **Archive** | active.md 超过 120 行或已完成条目超过 20 条 | archive/active_YYYY-MM.md |
+
+### 归档判定
+
+- 已完成条目 = `active.md` 中“已完成（待归档）”区块内的 `- [x]` 数量
+- 若该区块缺失，可回退为统计 `active.md` 中所有 `- [x]` 项
 
 ### 不写入的情况
 - 普通代码修改
@@ -263,7 +274,8 @@ Files updated:
 - 任何凭证信息
 
 ### 防止幻觉
-- AI 只能选择 _index.md 中列出的文件
+- 默认只读取 _index.md 中列出的文件
+- 用户明确指定路径时允许读取，并补充到索引
 - 创建新文件后必须同步更新索引
 
 ---
@@ -275,16 +287,13 @@ Files updated:
    └─ 检测 memory-bank/ 是否存在
 
 2. 固定加载
-   └─ 读取 brief.md + active.md
+   └─ 读取 brief.md + active.md + _index.md
 
-3. 读取索引
-   └─ 读取 _index.md
-
-4. 语义选择文件
-   └─ 基于用户消息选择相关文件
+3. 语义选择文件
+   └─ 基于 _index.md 选择相关文件
    └─ 按预算限制加载
 
-5. 处理用户请求
+4. 处理用户请求
    └─ **文档驱动开发原则**：
       - 方案讨论确定后 → 先写 memory-bank/docs/design-xxx.md，再写代码
       - 设计文档是契约，代码要符合文档
@@ -295,7 +304,7 @@ Files updated:
       - 没有 memory-bank/ → 第一项是"初始化 Memory Bank"，最后一项是"更新 Memory Bank"
    └─ 正常工作
 
-6. 执行"更新 Memory Bank" todo 时
+5. 执行"更新 Memory Bank" todo 时
    └─ 检查触发场景：
       - 方案讨论确定 / 设计变更 → 检查 docs/design-*.md 是否已存在
         - 存在 → 更新该文档
@@ -303,10 +312,11 @@ Files updated:
       - 修改了代码/配置文件 → 更新 active.md
       - 修复了 bug / 踩坑经验 → 创建 learnings/xxx.md
       - 做了技术决策 → 追加 patterns.md
-      - 新需求确认 → 创建 requirements/REQ-xxx.md
+   - 新需求确认 → 创建 requirements/REQ-xxx.md
+   - active.md 超出归档阈值 → 归档到 archive/active_YYYY-MM.md 并清理 active.md
    └─ 命中任一条件 → 输出 memory_ops 计划
 
-7. 执行写入
+6. 执行写入
    └─ 用户确认后执行
 ```
 
@@ -314,7 +324,7 @@ Files updated:
 
 ## 读取行为规范
 
-当系统提示 `[Memory Bank]` 通知加载了上下文时，遵循以下规范：
+当 system prompt 注入 Memory Bank Bootstrap（当前无 `[Memory Bank]` 头部通知）时，遵循以下规范：
 
 ### 1. 显式声明上下文来源
 

@@ -14,10 +14,14 @@ Memory Bank 是一个纯 Markdown 的项目记忆系统。通过结构化文档�
 - **技术文档**: 三层技术文档（架构/模块/细节），追踪实现变更
 - **经验沉淀**: 分类管理 bug/性能/集成经验
 
+> 注意：插件提醒链路当前暂时禁用，自动写入依赖 AI 按规则执行。
+> 环境变量 `MEMORY_BANK_DISABLED=1|true` 用于禁用提醒链路（提醒恢复前无效）。
+
 ## 目录结构
 
 ```
 memory-bank/
+├── _index.md                # 索引文件
 ├── brief.md                 # 项目概述
 ├── tech.md                  # 技术栈 + 环境
 ├── active.md                # 当前焦点（高频更新）
@@ -29,18 +33,23 @@ memory-bank/
 │
 ├── docs/                    # 技术文档
 │   ├── architecture.md      # L1: 架构层
+│   ├── design-*.md           # 方案设计文档
 │   ├── modules/             # L2: 模块层
 │   └── specs/               # L3: 细节层
 │
-└── learnings/               # 经验沉淀
-    ├── bugs/
-    ├── performance/
-    └── integrations/
+├── learnings/               # 经验沉淀
+│   ├── bugs/
+│   ├── performance/
+│   └── integrations/
+│
+└── archive/                 # 归档文件（按月）
+    └── active_YYYY-MM.md
 ```
 
 ## 使用方法
 
-### 初始化
+### 初始化（可选）
+默认无需初始化，仅在需要手动创建时使用。
 ```
 初始化记忆
 init memory bank
@@ -80,22 +89,26 @@ project status
 
 | 文件 | 用途 | 更新频率 |
 |------|------|----------|
+| _index.md | 索引与检索提示 | 中 |
 | brief.md | 项目是什么 | 低 |
 | tech.md | 技术栈和环境 | 低 |
 | active.md | 当前工作焦点 | 高 |
 | progress.md | 完成状态 | 中 |
 | patterns.md | 技术决策和约定 | 中 |
 | requirements/*.md | 需求文档 | 按需求变更 |
+| docs/design-*.md | 设计文档 | 按设计变更 |
 | docs/*.md | 技术文档 | 按实现变更 |
 | learnings/*/*.md | 经验记录 | 按事件 |
+| archive/*.md | 归档记录 | 按需 |
 
 ## 设计原则
 
 1. **纯 Markdown**: 无数据库，无外部服务，可 git 管理
 2. **人类可读**: 所有文档可直接阅读和编辑
-3. **简洁优先**: 核心 5 文件 + 3 目录
+3. **简洁优先**: 核心 6 文件 + 4 目录
 4. **追加优先**: patterns 和 learnings 只追加不重写
-5. **变更内聚**: 变更历史放在对应文档内
+5. **区块分离**: MACHINE_BLOCK 与 USER_BLOCK 分离维护
+6. **变更内聚**: 变更历史放在对应文档内
 
 ## 安全提示
 
