@@ -2,6 +2,8 @@
 
 > 解决 INIT 提醒后阻塞 UPDATE 提醒的问题
 
+> 注意：当前 `plugin/memory-bank.ts` 中 session.idle 相关提醒逻辑已暂时禁用，本设计作为历史方案参考。
+
 ## 问题描述
 
 ### 现象
@@ -109,6 +111,8 @@ state.lastSyncedTriggerSignature = computeTriggerSignature(state)
 | 新文件修改 | 触发 UPDATE 提醒（签名不同） |
 
 ## 实现检查清单
+
+> 已实现但当前提醒链路未启用，仅作历史记录。
 
 - [x] 更新 `RootState` 接口
 - [x] 实现 `computeTriggerSignature()` 函数

@@ -4,18 +4,20 @@
 
 **最终版 v3** - Oracle 认可的激进简化方案
 
+> 注意：当前 `plugin/memory-bank.ts` 中 session.idle 相关提醒逻辑已暂时禁用，本设计作为历史方案参考。
+
 ## 问题背景
 
-### 当前行为
+### 历史行为
 
-1. `session.idle` 触发时，插件通过 `git status --porcelain` 检测未提交变更
+1. 过去在 `session.idle` 触发时，插件通过 `git status --porcelain` 检测未提交变更
 2. 如果有代码变更且 memory-bank 未更新，触发提醒
 3. 用户选择"跳过"，设置 `memoryBankReviewed=true`（内存状态）
 4. 新会话时状态重置，**又提醒**
 
-### 问题根因
+### 历史根因（旧实现）
 
-`reminderFired` / `memoryBankReviewed` 是会话级内存状态，新会话时重置。
+旧实现中 `reminderFired` / `memoryBankReviewed` 是会话级内存状态，新会话时重置；现已替换为 `initReminderFired` 与签名机制。
 
 ## 解决方案
 

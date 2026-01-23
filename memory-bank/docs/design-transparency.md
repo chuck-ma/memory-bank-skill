@@ -2,8 +2,10 @@
 
 ## 背景
 
-当前 Memory Bank 的读写透明性不对称：
-- **写入**：仅在 session.idle 时提醒，AI 工作时没有"要记录"的意识
+> 注意：当前 `plugin/memory-bank.ts` 中 session.idle 相关提醒逻辑已暂时禁用，本设计作为历史方案参考。
+
+当前 Memory Bank 的读写透明性不对称（历史行为）：
+- **写入**：过去仅在 session.idle 时提醒，AI 工作时没有"要记录"的意识
 - **读取**：隐式注入 system prompt，用户看不到
 
 用户核心诉求：
@@ -23,7 +25,9 @@
 
 ---
 
-### 1. 头部通知（每次用户发消息）
+### 1. 头部通知（message.updated，已禁用）
+
+> 当前 `sendContextNotification` 已注释，现仅通过 system prompt 注入 Memory Bank Bootstrap 指令。
 
 **目的**：让 AI 从一开始就知道：
 - 加载了什么上下文（读）
@@ -45,13 +49,15 @@
 操作：加载 `/skill memory-bank` 按规范处理。
 ```
 
-**时机**：`message.updated` (role=user)
+**时机**：`message.updated` (role=user，当前已禁用)
 
 **去重**：使用 `message.id` 去重
 
 ---
 
-### 2. 尾部兜底（session.idle）
+### 2. 尾部兜底（session.idle，已禁用）
+
+> 当前提醒链路已禁用，以下内容为历史方案描述。
 
 **目的**：如果 AI 没有主动输出更新计划，兜底提醒
 
@@ -92,14 +98,14 @@
 
 | 维度 | 头部通知 | 尾部兜底 |
 |------|----------|----------|
-| **时机** | 每次用户发消息 | session.idle |
+| **时机** | message.updated（已禁用） | session.idle（已禁用） |
 | **目的** | 注入读写意识 | 防止遗漏 |
 | **判断方式** | AI 语义理解 | 关键词 + git status |
 | **必要性** | 核心机制 | 兜底机制 |
 
 ---
 
-## 实现清单
+## 实现清单（当前禁用）
 
 ### Plugin 修改
 
@@ -107,7 +113,7 @@
 |------|------|
 | `buildMemoryBankContext()` | 重构：返回 `{text, files, totalChars, truncated}` |
 | `message.updated` (role=user) | 发送头部通知（读 + 写意识） |
-| `session.idle` | 尾部兜底提醒（仅当有变更时） |
+| `session.idle` | 尾部兜底提醒（已禁用） |
 | 去重逻辑 | 使用 message.id 防止重复 |
 
 ### Skill 修改
