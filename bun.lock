@@ -1,0 +1,24 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "memory-bank-skill",
+      "devDependencies": {
+        "memory-bank-skill": "5.5.1",
+      },
+      "peerDependencies": {
+        "@opencode-ai/plugin": "^1.1.14",
+      },
+    },
+  },
+  "packages": {
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.1.36", "", { "dependencies": { "@opencode-ai/sdk": "1.1.36", "zod": "4.1.8" } }, "sha512-b2XWeFZN7UzgwkkzTIi6qSntkpEA9En2zvpqakQzZAGQm6QBdGAlv6r1u5hEnmF12Gzyj5umTMWr5GzVbP/oAA=="],
+
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.1.36", "", {}, "sha512-feNHWnbxhg03TI2QrWnw3Chc0eYrWSDSmHIy/ejpSVfcKlfXREw1Tpg0L4EjrpeSc4jB1eM673dh+WM/Ko2SFQ=="],
+
+    "memory-bank-skill": ["memory-bank-skill@5.5.1", "", { "peerDependencies": { "@opencode-ai/plugin": "^1.1.14" }, "bin": { "memory-bank-skill": "dist/cli.js" } }, "sha512-7j/qv0I5fOL8bW15MbHtYFaBr7caIgIpwBLSwJeaBSyob5guZWsnrxRAa12QuVSay34ARMvFiAbhACjQbufRUw=="],
+
+    "zod": ["zod@4.1.8", "", {}, "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="],
+  }
+}

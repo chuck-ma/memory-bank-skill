@@ -7,7 +7,7 @@ import { homedir } from "os";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
-var VERSION = "5.3.2";
+var VERSION = "5.5.2";
 var colors = {
   reset: "\x1B[0m",
   bold: "\x1B[1m",
@@ -148,7 +148,8 @@ async function installSkillFiles(packageRoot, undoStack, manifestFiles) {
 }
 async function installPluginToConfig(undoStack) {
   const configPath = join(homedir(), ".config", "opencode", "opencode.json");
-  const pluginPackage = "memory-bank-skill";
+  const pluginPackageWithVersion = `memory-bank-skill@${VERSION}`;
+  const pluginPackagePrefix = "memory-bank-skill";
   let config = {};
   let existed = false;
   let modified = false;
@@ -165,7 +166,7 @@ async function installPluginToConfig(undoStack) {
 
 ` + JSON.stringify({
         permission: { skill: "allow" },
-        plugin: [pluginPackage]
+        plugin: [pluginPackageWithVersion]
       }, null, 2));
     }
   }
@@ -187,9 +188,30 @@ async function installPluginToConfig(undoStack) {
     changes.push("Removed old file:// plugin reference");
     modified = true;
   }
-  if (!config.plugin.includes(pluginPackage)) {
-    config.plugin.push(pluginPackage);
-    changes.push(`Added plugin: ${pluginPackage}`);
+  const matchingIndices = [];
+  config.plugin.forEach((p, i) => {
+    if (p === pluginPackagePrefix || p.startsWith(`${pluginPackagePrefix}@`)) {
+      matchingIndices.push(i);
+    }
+  });
+  if (matchingIndices.length > 1) {
+    for (let i = matchingIndices.length - 1;i > 0; i--) {
+      const removed = config.plugin.splice(matchingIndices[i], 1)[0];
+      changes.push(`Removed duplicate: ${removed}`);
+    }
+    modified = true;
+  }
+  const existingIndex = config.plugin.findIndex((p) => p === pluginPackagePrefix || p.startsWith(`${pluginPackagePrefix}@`));
+  if (existingIndex !== -1) {
+    const existing = config.plugin[existingIndex];
+    if (existing !== pluginPackageWithVersion) {
+      config.plugin[existingIndex] = pluginPackageWithVersion;
+      changes.push(`Updated plugin: ${existing} \u2192 ${pluginPackageWithVersion}`);
+      modified = true;
+    }
+  } else {
+    config.plugin.push(pluginPackageWithVersion);
+    changes.push(`Added plugin: ${pluginPackageWithVersion}`);
     modified = true;
   }
   if (modified) {
@@ -213,6 +235,60 @@ async function writeManifest(manifestFiles, undoStack) {
   await atomicWriteFile(manifestPath, JSON.stringify(manifest, null, 2) + `
 `, undoStack);
 }
+async function checkAndCleanOpenCodeCache() {
+  const cacheDir = join(homedir(), ".cache", "opencode");
+  const cachePackageJson = join(cacheDir, "package.json");
+  const pkgCacheDir = join(cacheDir, "node_modules", "memory-bank-skill");
+  const cacheNodeModulesPkg = join(pkgCacheDir, "package.json");
+  if (!await exists(cachePackageJson)) {
+    return { cleaned: false };
+  }
+  try {
+    const cacheDepContent = await fs.readFile(cachePackageJson, "utf-8");
+    const cacheDep = JSON.parse(cacheDepContent);
+    const recordedVersion = cacheDep.dependencies?.["memory-bank-skill"];
+    if (!recordedVersion) {
+      return { cleaned: false };
+    }
+    let actualVersion = null;
+    if (await exists(cacheNodeModulesPkg)) {
+      try {
+        const actualPkg = JSON.parse(await fs.readFile(cacheNodeModulesPkg, "utf-8"));
+        actualVersion = actualPkg.version;
+      } catch {}
+    }
+    const needsClean = recordedVersion === "latest" || recordedVersion !== VERSION || actualVersion && actualVersion !== VERSION;
+    if (needsClean) {
+      const realCacheDir = await fs.realpath(cacheDir).catch(() => null);
+      const expectedPrefix = join(homedir(), ".cache", "opencode");
+      if (!realCacheDir || !realCacheDir.startsWith(expectedPrefix)) {
+        return { cleaned: false };
+      }
+      if (await exists(pkgCacheDir)) {
+        await fs.rm(pkgCacheDir, { recursive: true, force: true });
+      }
+      const bunLockb = join(cacheDir, "bun.lockb");
+      if (await exists(bunLockb)) {
+        await fs.rm(bunLockb, { force: true });
+      }
+      const newDeps = { ...cacheDep.dependencies };
+      delete newDeps["memory-bank-skill"];
+      cacheDep.dependencies = newDeps;
+      const tmpPath = `${cachePackageJson}.tmp`;
+      await fs.writeFile(tmpPath, JSON.stringify(cacheDep, null, 2) + `
+`);
+      await fs.rename(tmpPath, cachePackageJson);
+      const reason = recordedVersion === "latest" ? `"latest" \u2192 ${VERSION}` : `${recordedVersion} \u2192 ${VERSION}`;
+      return {
+        cleaned: true,
+        message: `Cleaned stale OpenCode cache (${reason})`
+      };
+    }
+  } catch {
+    return { cleaned: false };
+  }
+  return { cleaned: false };
+}
 async function install() {
   log(`
 ${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}
@@ -222,6 +298,11 @@ ${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}
   const manifestFiles = [];
   const results = [];
   try {
+    const cacheResult = await checkAndCleanOpenCodeCache();
+    if (cacheResult.cleaned) {
+      logSuccess(cacheResult.message || "Cleaned OpenCode cache");
+      log("");
+    }
     logStep(1, 2, "Installing skill files...");
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles);
     logDetail(r1.details || "");
@@ -267,20 +348,50 @@ ${colors.bold}Memory Bank Skill Doctor v${VERSION}${colors.reset}
   }
   const configPath = join(homedir(), ".config", "opencode", "opencode.json");
   let pluginConfigured = false;
+  let pluginVersion = "";
   if (await exists(configPath)) {
     try {
       const content = await fs.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
-      pluginConfigured = Array.isArray(config.plugin) && config.plugin.includes("memory-bank-skill");
+      if (Array.isArray(config.plugin)) {
+        const entry = config.plugin.find((p) => p === "memory-bank-skill" || p.startsWith("memory-bank-skill@"));
+        if (entry) {
+          pluginConfigured = true;
+          pluginVersion = entry;
+        }
+      }
     } catch {}
   }
   if (pluginConfigured) {
     log(`${colors.green}\u2713${colors.reset} Plugin configured in opencode.json`);
-    logDetail("memory-bank-skill");
+    logDetail(pluginVersion);
+    if (!pluginVersion.includes("@")) {
+      log(`${colors.yellow}\u26A0${colors.reset} Consider using pinned version: memory-bank-skill@${VERSION}`);
+    }
   } else {
     log(`${colors.red}\u2717${colors.reset} Plugin not configured`);
-    logDetail("Add 'memory-bank-skill' to plugin array in opencode.json");
+    logDetail(`Add 'memory-bank-skill@${VERSION}' to plugin array in opencode.json`);
     allOk = false;
+  }
+  const cacheDir = join(homedir(), ".cache", "opencode");
+  const cachePackageJson = join(cacheDir, "package.json");
+  if (await exists(cachePackageJson)) {
+    try {
+      const content = await fs.readFile(cachePackageJson, "utf-8");
+      const cacheDep = JSON.parse(content);
+      const recordedVersion = cacheDep.dependencies?.["memory-bank-skill"];
+      if (recordedVersion) {
+        const cacheNodeModules = join(cacheDir, "node_modules", "memory-bank-skill", "package.json");
+        if (await exists(cacheNodeModules)) {
+          const actualPkg = JSON.parse(await fs.readFile(cacheNodeModules, "utf-8"));
+          if (recordedVersion !== actualPkg.version && recordedVersion !== "latest") {
+            log(`${colors.yellow}\u26A0${colors.reset} OpenCode cache version mismatch`);
+            logDetail(`Recorded: ${recordedVersion}, Actual: ${actualPkg.version}`);
+            logDetail(`Run 'bunx memory-bank-skill install' to fix`);
+          }
+        }
+      }
+    } catch {}
   }
   const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json");
   if (await exists(manifestPath)) {

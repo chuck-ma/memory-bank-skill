@@ -1,6 +1,6 @@
 {
   "name": "memory-bank-skill",
-  "version": "5.3.2",
+  "version": "5.5.2",
   "description": "Memory Bank - 项目记忆系统，让 AI 助手在每次对话中都能快速理解项目上下文",
   "type": "module",
   "main": "dist/plugin.js",
@@ -40,5 +40,8 @@
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "memory-bank-skill": "5.5.1"
   }
 }

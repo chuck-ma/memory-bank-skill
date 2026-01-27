@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url"
 // Constants
 // ============================================================================
 
-const VERSION = "5.3.2"
+const VERSION = "5.5.2"
 // ============================================================================
 // Types
 // ============================================================================
@@ -247,7 +247,8 @@ async function installPluginToConfig(
   undoStack: UndoAction[]
 ): Promise<InstallResult> {
   const configPath = join(homedir(), ".config", "opencode", "opencode.json")
-  const pluginPackage = "memory-bank-skill"
+  const pluginPackageWithVersion = `memory-bank-skill@${VERSION}`
+  const pluginPackagePrefix = "memory-bank-skill"
 
   let config: any = {}
   let existed = false
@@ -266,7 +267,7 @@ async function installPluginToConfig(
           JSON.stringify(
             {
               permission: { skill: "allow" },
-              plugin: [pluginPackage],
+              plugin: [pluginPackageWithVersion],
             },
             null,
             2
@@ -285,12 +286,10 @@ async function installPluginToConfig(
     modified = true
   }
 
-  // Ensure plugin array contains our plugin (npm package name)
   if (!Array.isArray(config.plugin)) {
     config.plugin = []
   }
   
-  // Remove old file:// plugin URL if present
   const oldPluginUrl = `file://${join(homedir(), ".config", "opencode", "plugin", "memory-bank.ts")}`
   const oldPluginIndex = config.plugin.indexOf(oldPluginUrl)
   if (oldPluginIndex !== -1) {
@@ -299,10 +298,35 @@ async function installPluginToConfig(
     modified = true
   }
   
-  // Add npm package name if not present
-  if (!config.plugin.includes(pluginPackage)) {
-    config.plugin.push(pluginPackage)
-    changes.push(`Added plugin: ${pluginPackage}`)
+  const matchingIndices: number[] = []
+  config.plugin.forEach((p: string, i: number) => {
+    if (p === pluginPackagePrefix || p.startsWith(`${pluginPackagePrefix}@`)) {
+      matchingIndices.push(i)
+    }
+  })
+  
+  if (matchingIndices.length > 1) {
+    for (let i = matchingIndices.length - 1; i > 0; i--) {
+      const removed = config.plugin.splice(matchingIndices[i], 1)[0]
+      changes.push(`Removed duplicate: ${removed}`)
+    }
+    modified = true
+  }
+  
+  const existingIndex = config.plugin.findIndex((p: string) => 
+    p === pluginPackagePrefix || p.startsWith(`${pluginPackagePrefix}@`)
+  )
+  
+  if (existingIndex !== -1) {
+    const existing = config.plugin[existingIndex]
+    if (existing !== pluginPackageWithVersion) {
+      config.plugin[existingIndex] = pluginPackageWithVersion
+      changes.push(`Updated plugin: ${existing} → ${pluginPackageWithVersion}`)
+      modified = true
+    }
+  } else {
+    config.plugin.push(pluginPackageWithVersion)
+    changes.push(`Added plugin: ${pluginPackageWithVersion}`)
     modified = true
   }
 
@@ -341,6 +365,81 @@ async function writeManifest(
 }
 
 // ============================================================================
+// Cache Management
+// ============================================================================
+
+async function checkAndCleanOpenCodeCache(): Promise<{ cleaned: boolean; message?: string }> {
+  const cacheDir = join(homedir(), ".cache", "opencode")
+  const cachePackageJson = join(cacheDir, "package.json")
+  const pkgCacheDir = join(cacheDir, "node_modules", "memory-bank-skill")
+  const cacheNodeModulesPkg = join(pkgCacheDir, "package.json")
+  
+  if (!(await exists(cachePackageJson))) {
+    return { cleaned: false }
+  }
+  
+  try {
+    const cacheDepContent = await fs.readFile(cachePackageJson, "utf-8")
+    const cacheDep = JSON.parse(cacheDepContent)
+    const recordedVersion = cacheDep.dependencies?.["memory-bank-skill"]
+    
+    if (!recordedVersion) {
+      return { cleaned: false }
+    }
+    
+    let actualVersion: string | null = null
+    if (await exists(cacheNodeModulesPkg)) {
+      try {
+        const actualPkg = JSON.parse(await fs.readFile(cacheNodeModulesPkg, "utf-8"))
+        actualVersion = actualPkg.version
+      } catch {}
+    }
+    
+    const needsClean = 
+      recordedVersion === "latest" ||
+      recordedVersion !== VERSION ||
+      (actualVersion && actualVersion !== VERSION)
+    
+    if (needsClean) {
+      const realCacheDir = await fs.realpath(cacheDir).catch(() => null)
+      const expectedPrefix = join(homedir(), ".cache", "opencode")
+      if (!realCacheDir || !realCacheDir.startsWith(expectedPrefix)) {
+        return { cleaned: false }
+      }
+      
+      if (await exists(pkgCacheDir)) {
+        await fs.rm(pkgCacheDir, { recursive: true, force: true })
+      }
+      
+      const bunLockb = join(cacheDir, "bun.lockb")
+      if (await exists(bunLockb)) {
+        await fs.rm(bunLockb, { force: true })
+      }
+      
+      const newDeps = { ...cacheDep.dependencies }
+      delete newDeps["memory-bank-skill"]
+      cacheDep.dependencies = newDeps
+      
+      const tmpPath = `${cachePackageJson}.tmp`
+      await fs.writeFile(tmpPath, JSON.stringify(cacheDep, null, 2) + "\n")
+      await fs.rename(tmpPath, cachePackageJson)
+      
+      const reason = recordedVersion === "latest" 
+        ? `"latest" → ${VERSION}` 
+        : `${recordedVersion} → ${VERSION}`
+      return { 
+        cleaned: true, 
+        message: `Cleaned stale OpenCode cache (${reason})` 
+      }
+    }
+  } catch {
+    return { cleaned: false }
+  }
+  
+  return { cleaned: false }
+}
+
+// ============================================================================
 // Main Commands
 // ============================================================================
 
@@ -353,6 +452,12 @@ async function install(): Promise<void> {
   const results: InstallResult[] = []
 
   try {
+    const cacheResult = await checkAndCleanOpenCodeCache()
+    if (cacheResult.cleaned) {
+      logSuccess(cacheResult.message || "Cleaned OpenCode cache")
+      log("")
+    }
+    
     logStep(1, 2, "Installing skill files...")
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles)
     logDetail(r1.details || "")
@@ -404,20 +509,53 @@ async function doctor(): Promise<void> {
 
   const configPath = join(homedir(), ".config", "opencode", "opencode.json")
   let pluginConfigured = false
+  let pluginVersion = ""
   if (await exists(configPath)) {
     try {
       const content = await fs.readFile(configPath, "utf-8")
       const config = JSON.parse(content)
-      pluginConfigured = Array.isArray(config.plugin) && config.plugin.includes("memory-bank-skill")
+      if (Array.isArray(config.plugin)) {
+        const entry = config.plugin.find((p: string) => 
+          p === "memory-bank-skill" || p.startsWith("memory-bank-skill@")
+        )
+        if (entry) {
+          pluginConfigured = true
+          pluginVersion = entry
+        }
+      }
     } catch {}
   }
   if (pluginConfigured) {
     log(`${colors.green}✓${colors.reset} Plugin configured in opencode.json`)
-    logDetail("memory-bank-skill")
+    logDetail(pluginVersion)
+    if (!pluginVersion.includes("@")) {
+      log(`${colors.yellow}⚠${colors.reset} Consider using pinned version: memory-bank-skill@${VERSION}`)
+    }
   } else {
     log(`${colors.red}✗${colors.reset} Plugin not configured`)
-    logDetail("Add 'memory-bank-skill' to plugin array in opencode.json")
+    logDetail(`Add 'memory-bank-skill@${VERSION}' to plugin array in opencode.json`)
     allOk = false
+  }
+  
+  const cacheDir = join(homedir(), ".cache", "opencode")
+  const cachePackageJson = join(cacheDir, "package.json")
+  if (await exists(cachePackageJson)) {
+    try {
+      const content = await fs.readFile(cachePackageJson, "utf-8")
+      const cacheDep = JSON.parse(content)
+      const recordedVersion = cacheDep.dependencies?.["memory-bank-skill"]
+      if (recordedVersion) {
+        const cacheNodeModules = join(cacheDir, "node_modules", "memory-bank-skill", "package.json")
+        if (await exists(cacheNodeModules)) {
+          const actualPkg = JSON.parse(await fs.readFile(cacheNodeModules, "utf-8"))
+          if (recordedVersion !== actualPkg.version && recordedVersion !== "latest") {
+            log(`${colors.yellow}⚠${colors.reset} OpenCode cache version mismatch`)
+            logDetail(`Recorded: ${recordedVersion}, Actual: ${actualPkg.version}`)
+            logDetail(`Run 'bunx memory-bank-skill install' to fix`)
+          }
+        }
+      }
+    } catch {}
   }
 
   const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json")
