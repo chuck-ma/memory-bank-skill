@@ -193,6 +193,102 @@ memory-bank/
 | `新模块文档: {名称}` / `new module doc: {name}` | 创建模块文档 |
 | `记录经验: {类型}` / `log learning: {type}` | 创建经验文档（bug/performance/integration） |
 | `项目状态` / `project status` | 汇总输出当前状态 |
+| `整理记忆` / `organize memory` | 分析文件分类，给出迁移和新建目录建议 |
+
+---
+
+## 整理记忆（Organize）
+
+当用户触发"整理记忆"时，分析 `memory-bank/` 目录结构，给出分类建议。
+
+### 触发词
+
+- 中文：`整理记忆`、`归类记忆`、`整理 memory bank`
+- 英文：`organize memory`、`organize memory bank`、`tidy memory bank`
+
+### 执行流程
+
+```
+Phase A: 分析（默认）
+    - 扫描 memory-bank/**/*.md
+    - 生成迁移建议 + 新目录建议
+    - 输出建议清单，不做任何改动
+
+Phase B: 执行（用户确认后）
+    - 用户回复 `apply` / `确认执行`
+    - 创建新目录、移动文件、更新索引
+    - 输出变更报告
+```
+
+### 保护列表（永不迁移）
+
+- `_index.md`、`brief.md`、`tech.md`、`active.md`、`patterns.md`、`progress.md`
+- `archive/**` 下所有文件
+
+### 强规则路由
+
+| 文件模式 | 目标目录 |
+|----------|----------|
+| `REQ-*.md` | `requirements/` |
+| `design-*.md`、`architecture.md` | `docs/` |
+| `active_YYYY-MM.md` | `archive/` |
+| `YYYY-MM-DD-*bug*.md` | `learnings/bugs/` |
+| `YYYY-MM-DD-*perf*.md` | `learnings/performance/` |
+
+### 新目录建议
+
+仅在以下条件**全部满足**时建议新建子目录：
+
+1. **父目录限制**：只允许在 `docs/`、`learnings/` 下新建
+2. **数量阈值**：同主题文件数 >= 4
+3. **主题来源**：文件名或标题中的高频关键词
+
+**命名规范**：全小写 ASCII、`kebab-case`、长度 <= 32 字符
+
+### 输出格式
+
+**迁移建议**：
+
+```markdown
+## 迁移建议
+
+| # | 当前路径 | 建议路径 | 原因 |
+|---|----------|----------|------|
+| 1 | wechat-auth.md | docs/wechat-auth.md | 文件名含 design 关键词 |
+```
+
+**新目录建议**：
+
+```markdown
+## 新目录建议
+
+| # | 新目录 | 迁入文件 | 原因 |
+|---|--------|----------|------|
+| 1 | learnings/integrations/wechat/ | file1.md, file2.md, ... | 4 个文件标题含 "wechat" |
+```
+
+**确认提示**：
+
+```
+回复 `apply` 或 `确认执行` 执行以上变更。
+```
+
+### 执行边界
+
+- 只改 `memory-bank/` 内文件
+- 目标已存在同名文件时跳过，不覆盖
+- 只修复 `memory-bank/**` 内的 `[text](path.md)` 形式链接
+- `apply` 只执行强规则命中的迁移建议
+- 新目录建议需显式选择：`apply 1` 或 `apply dirs`
+- 文件已在正确位置时不输出建议
+
+### 忽略机制
+
+创建 `memory-bank/.organize-ignore` 文件可忽略特定文件/目录（glob 模式）。
+
+### Learnings 回退
+
+`learnings/` 下不匹配子目录规则的文件保持原位，不强制移动。
 
 ---
 
