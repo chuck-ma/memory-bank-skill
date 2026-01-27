@@ -27,5 +27,5 @@ bunx memory-bank-skill install
 
 ## 版本
 
-- 当前版本：5.3.2
-- 主要更新：Plugin 改为 npm 包形式安装，在 opencode.json 中直接配置包名
+- 当前版本：5.5.2
+- 主要更新：修复 OpenCode 缓存版本不一致导致 Bun segfault 问题
