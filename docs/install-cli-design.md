@@ -47,7 +47,7 @@ memory-bank-skill/
 ```json
 {
   "name": "memory-bank-skill",
-  "version": "5.3.2",
+  "version": "5.5.0",
   "description": "Memory Bank - 项目记忆系统，让 AI 助手在每次对话中都能快速理解项目上下文",
   "type": "module",
   "main": "dist/plugin.js",
@@ -248,7 +248,7 @@ function updateAgentsMd(content: string, block: string): string {
 ```
 $ bunx memory-bank-skill install
 
-Memory Bank Skill Installer v5.3.2
+Memory Bank Skill Installer v5.5.0
 
 [1/2] Installing skill files...
 → ~/.config/opencode/skill/memory-bank/
@@ -265,7 +265,7 @@ Next step: Restart OpenCode
 ```
 $ bunx memory-bank-skill install
 
-Memory Bank Skill Installer v5.3.2
+Memory Bank Skill Installer v5.5.0
 
 [1/2] Installing skill files...
       → ~/.config/opencode/skill/memory-bank/
@@ -282,7 +282,7 @@ Next step: Restart OpenCode
 ```
 $ bunx memory-bank-skill install
 
-Memory Bank Skill Installer v5.3.2
+Memory Bank Skill Installer v5.5.0
 
 [1/2] Installing skill files...
 → ~/.config/opencode/skill/memory-bank/
