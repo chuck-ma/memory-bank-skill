@@ -27,5 +27,5 @@ bunx memory-bank-skill install
 
 ## 版本
 
-- 当前版本：5.5.2
-- 主要更新：修复 OpenCode 缓存版本不一致导致 Bun segfault 问题
+- 当前版本：5.6.0
+- 主要更新：新增 Memory-first 原则，读写规则对称
