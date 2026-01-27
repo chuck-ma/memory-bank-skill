@@ -184,5 +184,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 5.3.2
-- **主要更新**: 增加 Design 设计文档支持，方案讨论确定时自动创建/更新 docs/design-*.md
+- **版本**: 5.4.0
+- **主要更新**: 新增"整理记忆"功能 - AI 自动分析文件分类，给出迁移和新建目录建议
