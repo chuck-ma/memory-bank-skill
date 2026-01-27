@@ -204,18 +204,25 @@ function truncateToBudget(text: string, budget: number): string {
 }
 
 async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<MemoryBankContextResult | null> {
+  const fnStart = Date.now()
+  if (DEBUG) console.error(`[MB-DEBUG] buildMemoryBankContextWithMeta START projectRoot=${projectRoot}`)
+  
   const parts: string[] = []
   const files: { relPath: string; chars: number }[] = []
 
   for (const rel of MEMORY_BANK_FILES) {
+    const fileStart = Date.now()
     const abs = path.join(projectRoot, rel)
+    if (DEBUG) console.error(`[MB-DEBUG] reading ${rel}...`)
     const content = await readTextCached(abs)
+    if (DEBUG) console.error(`[MB-DEBUG] read ${rel} done, hasContent=${!!content}, elapsed=${Date.now() - fileStart}ms`)
     if (!content) continue
     const trimmed = content.trim()
     if (!trimmed) continue
     parts.push(`## ${rel}\n\n${trimmed}`)
     files.push({ relPath: rel, chars: trimmed.length })
   }
+  if (DEBUG) console.error(`[MB-DEBUG] all files read, parts=${parts.length}, totalElapsed=${Date.now() - fnStart}ms`)
 
   if (parts.length === 0) return null
 
@@ -697,43 +704,71 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
     // ========================================================================
 
     "experimental.chat.system.transform": async (_input, output) => {
-      if (output.system.some((s) => s.includes(SENTINEL_OPEN))) return
+      const hookStart = Date.now()
+      log.info("[HOOK] system.transform START")
+      try {
+        if (output.system.some((s) => s.includes(SENTINEL_OPEN))) {
+          log.info("[HOOK] system.transform SKIP (sentinel exists)", { elapsed: Date.now() - hookStart })
+          return
+        }
 
-      const ctx = await buildMemoryBankContext(projectRoot)
-      if (ctx) {
-        output.system.push(ctx)
-        return
+        log.info("[HOOK] system.transform building context...")
+        const ctx = await buildMemoryBankContext(projectRoot)
+        log.info("[HOOK] system.transform context built", { hasCtx: !!ctx, elapsed: Date.now() - hookStart })
+        
+        if (ctx) {
+          output.system.push(ctx)
+          log.info("[HOOK] system.transform DONE (ctx pushed)", { elapsed: Date.now() - hookStart })
+          return
+        }
+
+        // No memory-bank exists - inject init instruction
+        const initInstruction =
+          `${SENTINEL_OPEN}\n` +
+          `# Memory Bank 未初始化\n\n` +
+          `项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n` +
+          `**AI 行为指令**：\n` +
+          `- **Todo 创建规则（必须）**：创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md），最后一项必须是"更新 Memory Bank"（更新 active.md）\n` +
+          `${SENTINEL_CLOSE}`
+        output.system.push(initInstruction)
+        log.info("[HOOK] system.transform DONE (init pushed)", { elapsed: Date.now() - hookStart })
+      } catch (err) {
+        log.error("[HOOK] system.transform ERROR", String(err), { elapsed: Date.now() - hookStart })
       }
-
-      // No memory-bank exists - inject init instruction
-      const initInstruction =
-        `${SENTINEL_OPEN}\n` +
-        `# Memory Bank 未初始化\n\n` +
-        `项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n` +
-        `**AI 行为指令**：\n` +
-        `- **Todo 创建规则（必须）**：创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md），最后一项必须是"更新 Memory Bank"（更新 active.md）\n` +
-        `${SENTINEL_CLOSE}`
-      output.system.push(initInstruction)
     },
 
     "experimental.session.compacting": async (_input, output) => {
-      if (output.context.some((s) => s.includes(SENTINEL_OPEN))) return
+      const hookStart = Date.now()
+      log.info("[HOOK] session.compacting START")
+      try {
+        if (output.context.some((s) => s.includes(SENTINEL_OPEN))) {
+          log.info("[HOOK] session.compacting SKIP (sentinel exists)", { elapsed: Date.now() - hookStart })
+          return
+        }
 
-      const ctx = await buildMemoryBankContext(projectRoot)
-      if (ctx) {
-        output.context.push(ctx)
-        return
+        log.info("[HOOK] session.compacting building context...")
+        const ctx = await buildMemoryBankContext(projectRoot)
+        log.info("[HOOK] session.compacting context built", { hasCtx: !!ctx, elapsed: Date.now() - hookStart })
+        
+        if (ctx) {
+          output.context.push(ctx)
+          log.info("[HOOK] session.compacting DONE (ctx pushed)", { elapsed: Date.now() - hookStart })
+          return
+        }
+
+        // No memory-bank exists - inject init instruction
+        const initInstruction =
+          `${SENTINEL_OPEN}\n` +
+          `# Memory Bank 未初始化\n\n` +
+          `项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n` +
+          `**AI 行为指令**：\n` +
+          `- **Todo 创建规则（必须）**：创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md），最后一项必须是"更新 Memory Bank"（更新 active.md）\n` +
+          `${SENTINEL_CLOSE}`
+        output.context.push(initInstruction)
+        log.info("[HOOK] session.compacting DONE (init pushed)", { elapsed: Date.now() - hookStart })
+      } catch (err) {
+        log.error("[HOOK] session.compacting ERROR", String(err), { elapsed: Date.now() - hookStart })
       }
-
-      // No memory-bank exists - inject init instruction
-      const initInstruction =
-        `${SENTINEL_OPEN}\n` +
-        `# Memory Bank 未初始化\n\n` +
-        `项目 \`${path.basename(projectRoot)}\` 尚未初始化 Memory Bank。\n\n` +
-        `**AI 行为指令**：\n` +
-        `- **Todo 创建规则（必须）**：创建 todo 时，第一项必须是"初始化 Memory Bank"（扫描项目结构，创建 brief.md + tech.md + _index.md），最后一项必须是"更新 Memory Bank"（更新 active.md）\n` +
-        `${SENTINEL_CLOSE}`
-      output.context.push(initInstruction)
     },
 
     // ========================================================================
