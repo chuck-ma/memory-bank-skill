@@ -48,10 +48,10 @@ bunx memory-bank-skill doctor
 
 | 操作 | 目标路径 |
 |------|----------|
-| 复制 Skill 文件 | `~/.config/opencode/skill/memory-bank/` 和 `memory-bank-writer/` |
+| 复制 Skill 文件 | `~/.config/opencode/skills/memory-bank/` 和 `memory-bank-writer/` |
 | 配置 opencode.json | 添加 `permission.skill=allow`，注册插件和 agent |
 | 注册 Agent | 添加 `memory-bank-writer` agent（用于写入守卫） |
-| 写入 manifest | `~/.config/opencode/skill/memory-bank/.manifest.json` |
+| 写入 manifest | `~/.config/opencode/skills/memory-bank/.manifest.json` |
 
 ---
 
@@ -183,14 +183,14 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 | 文件 | 路径 |
 |------|------|
-| Skill 主文件 | `~/.config/opencode/skill/memory-bank/SKILL.md` |
-| 文件模板 | `~/.config/opencode/skill/memory-bank/references/templates.md` |
-| 高级规则 | `~/.config/opencode/skill/memory-bank/references/advanced-rules.md` |
+| Skill 主文件 | `~/.config/opencode/skills/memory-bank/SKILL.md` |
+| 文件模板 | `~/.config/opencode/skills/memory-bank/references/templates.md` |
+| 高级规则 | `~/.config/opencode/skills/memory-bank/references/advanced-rules.md` |
 | 插件 | `opencode.json` 的 `plugin` 数组（`memory-bank-skill`） |
 
 ---
 
 ## 版本
 
-- **版本**: 5.7.5
-- **主要更新**: 写入守卫 + Writer Agent 自动注册
+- **版本**: 5.8.0
+- **主要更新**: 修复 skill 路径（`skill/` → `skills/`）+ 写入守卫 + Writer Agent 自动注册
