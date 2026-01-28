@@ -227,25 +227,34 @@ async function installSkillFiles(
   undoStack: UndoAction[],
   manifestFiles: { path: string; sha256: string }[]
 ): Promise<InstallResult> {
-  const srcDir = join(packageRoot, "skill", "memory-bank")
-  const destDir = join(homedir(), ".config", "opencode", "skill", "memory-bank")
+  const skills = ["memory-bank", "memory-bank-writer"]
+  const baseDestDir = join(homedir(), ".config", "opencode", "skill")
+  let anyExisted = false
 
-  if (!(await exists(srcDir))) {
-    throw new Error(`Skill source not found: ${srcDir}`)
+  for (const skill of skills) {
+    const srcDir = join(packageRoot, "skill", skill)
+    const destDir = join(baseDestDir, skill)
+
+    if (!(await exists(srcDir))) {
+      throw new Error(`Skill source not found: ${srcDir}`)
+    }
+
+    if (await exists(destDir)) {
+      anyExisted = true
+    }
+    await atomicCopyDir(srcDir, destDir, undoStack, manifestFiles)
   }
-
-  const existed = await exists(destDir)
-  await atomicCopyDir(srcDir, destDir, undoStack, manifestFiles)
 
   return {
     step: "Installing skill files",
-    status: existed ? "updated" : "created",
-    details: destDir,
+    status: anyExisted ? "updated" : "created",
+    details: baseDestDir,
   }
 }
 
 async function installPluginToConfig(
-  undoStack: UndoAction[]
+  undoStack: UndoAction[],
+  customModel?: string
 ): Promise<InstallResult> {
   const configPath = join(homedir(), ".config", "opencode", "opencode.json")
   const pluginPackageWithVersion = `memory-bank-skill@${VERSION}`
@@ -328,6 +337,28 @@ async function installPluginToConfig(
   } else {
     config.plugin.push(pluginPackageWithVersion)
     changes.push(`Added plugin: ${pluginPackageWithVersion}`)
+    modified = true
+  }
+
+  if (!config.agent) {
+    config.agent = {}
+  }
+  
+  const defaultModel = "cliproxy/claude-opus-4-5-20251101"
+  const writerAgent = {
+    description: "Memory Bank 专用写入代理",
+    model: customModel || defaultModel,
+    tools: {
+      write: true,
+      edit: true,
+      bash: true
+    }
+  }
+  
+  const existingWriter = config.agent["memory-bank-writer"]
+  if (!existingWriter || JSON.stringify(existingWriter) !== JSON.stringify(writerAgent)) {
+    config.agent["memory-bank-writer"] = writerAgent
+    changes.push(existingWriter ? "Updated agent: memory-bank-writer" : "Added agent: memory-bank-writer")
     modified = true
   }
 
@@ -444,7 +475,7 @@ async function checkAndCleanOpenCodeCache(): Promise<{ cleaned: boolean; message
 // Main Commands
 // ============================================================================
 
-async function install(): Promise<void> {
+async function install(customModel?: string): Promise<void> {
   log(`\n${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}\n`)
 
   const packageRoot = getPackageRoot()
@@ -465,7 +496,7 @@ async function install(): Promise<void> {
     results.push(r1)
 
     logStep(2, 2, "Configuring plugin...")
-    const r2 = await installPluginToConfig(undoStack)
+    const r2 = await installPluginToConfig(undoStack, customModel)
     logDetail(r2.details || "")
     results.push(r2)
 
@@ -585,14 +616,19 @@ function showHelp(): void {
 ${colors.bold}Memory Bank Skill v${VERSION}${colors.reset}
 
 Usage:
-  bunx memory-bank-skill <command>
+  bunx memory-bank-skill <command> [options]
 
 Commands:
   install    Install Memory Bank skill and plugin
   doctor     Check installation status
 
+Options:
+  --model <model>  Specify model for memory-bank-writer agent
+                   Default: cliproxy/claude-opus-4-5-20251101
+
 Examples:
   bunx memory-bank-skill install
+  bunx memory-bank-skill install --model anthropic/claude-sonnet-4-5
   bunx memory-bank-skill doctor
 `)
 }
@@ -601,11 +637,27 @@ Examples:
 // Entry Point
 // ============================================================================
 
-const command = process.argv[2]
+function parseArgs(): { command?: string; model?: string } {
+  const args = process.argv.slice(2)
+  let command: string | undefined
+  let model: string | undefined
+  
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--model" && args[i + 1]) {
+      model = args[++i]
+    } else if (!args[i].startsWith("-")) {
+      command = args[i]
+    }
+  }
+  
+  return { command, model }
+}
+
+const { command, model } = parseArgs()
 
 switch (command) {
   case "install":
-    install()
+    install(model)
     break
   case "doctor":
     doctor()

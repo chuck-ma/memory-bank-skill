@@ -7,7 +7,57 @@ import { homedir } from "os";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
-var VERSION = "5.6.0";
+// package.json
+var package_default = {
+  name: "memory-bank-skill",
+  version: "5.7.7",
+  description: "Memory Bank - \u9879\u76EE\u8BB0\u5FC6\u7CFB\u7EDF\uFF0C\u8BA9 AI \u52A9\u624B\u5728\u6BCF\u6B21\u5BF9\u8BDD\u4E2D\u90FD\u80FD\u5FEB\u901F\u7406\u89E3\u9879\u76EE\u4E0A\u4E0B\u6587",
+  type: "module",
+  main: "dist/plugin.js",
+  bin: {
+    "memory-bank-skill": "dist/cli.js"
+  },
+  files: [
+    "dist/",
+    "skill/",
+    "templates/"
+  ],
+  scripts: {
+    build: "bun build src/cli.ts plugin/memory-bank.ts --outdir dist --target bun && mv dist/src/cli.js dist/cli.js && mv dist/plugin/memory-bank.js dist/plugin.js && rm -rf dist/plugin dist/src",
+    prepublishOnly: "bun run build",
+    "test:install": "bun run build && bun ./dist/cli.js install",
+    "test:doctor": "bun run build && bun ./dist/cli.js doctor"
+  },
+  keywords: [
+    "opencode",
+    "plugin",
+    "memory-bank",
+    "ai",
+    "context",
+    "claude"
+  ],
+  author: "",
+  license: "MIT",
+  repository: {
+    type: "git",
+    url: "git+https://github.com/user/memory-bank-skill.git"
+  },
+  engines: {
+    node: ">=18.0.0"
+  },
+  peerDependencies: {
+    "@opencode-ai/plugin": "^1.1.14"
+  },
+  publishConfig: {
+    registry: "https://registry.npmjs.org/"
+  },
+  devDependencies: {
+    "memory-bank-skill": "5.5.1"
+  }
+};
+
+// src/cli.ts
+var VERSION = package_default.version;
 var colors = {
   reset: "\x1B[0m",
   bold: "\x1B[1m",
@@ -133,20 +183,27 @@ async function cleanupBackups(undoStack) {
   }
 }
 async function installSkillFiles(packageRoot, undoStack, manifestFiles) {
-  const srcDir = join(packageRoot, "skill", "memory-bank");
-  const destDir = join(homedir(), ".config", "opencode", "skill", "memory-bank");
-  if (!await exists(srcDir)) {
-    throw new Error(`Skill source not found: ${srcDir}`);
+  const skills = ["memory-bank", "memory-bank-writer"];
+  const baseDestDir = join(homedir(), ".config", "opencode", "skill");
+  let anyExisted = false;
+  for (const skill of skills) {
+    const srcDir = join(packageRoot, "skill", skill);
+    const destDir = join(baseDestDir, skill);
+    if (!await exists(srcDir)) {
+      throw new Error(`Skill source not found: ${srcDir}`);
+    }
+    if (await exists(destDir)) {
+      anyExisted = true;
+    }
+    await atomicCopyDir(srcDir, destDir, undoStack, manifestFiles);
   }
-  const existed = await exists(destDir);
-  await atomicCopyDir(srcDir, destDir, undoStack, manifestFiles);
   return {
     step: "Installing skill files",
-    status: existed ? "updated" : "created",
-    details: destDir
+    status: anyExisted ? "updated" : "created",
+    details: baseDestDir
   };
 }
-async function installPluginToConfig(undoStack) {
+async function installPluginToConfig(undoStack, customModel) {
   const configPath = join(homedir(), ".config", "opencode", "opencode.json");
   const pluginPackageWithVersion = `memory-bank-skill@${VERSION}`;
   const pluginPackagePrefix = "memory-bank-skill";
@@ -212,6 +269,25 @@ async function installPluginToConfig(undoStack) {
   } else {
     config.plugin.push(pluginPackageWithVersion);
     changes.push(`Added plugin: ${pluginPackageWithVersion}`);
+    modified = true;
+  }
+  if (!config.agent) {
+    config.agent = {};
+  }
+  const defaultModel = "cliproxy/claude-opus-4-5-20251101";
+  const writerAgent = {
+    description: "Memory Bank \u4E13\u7528\u5199\u5165\u4EE3\u7406",
+    model: customModel || defaultModel,
+    tools: {
+      write: true,
+      edit: true,
+      bash: true
+    }
+  };
+  const existingWriter = config.agent["memory-bank-writer"];
+  if (!existingWriter || JSON.stringify(existingWriter) !== JSON.stringify(writerAgent)) {
+    config.agent["memory-bank-writer"] = writerAgent;
+    changes.push(existingWriter ? "Updated agent: memory-bank-writer" : "Added agent: memory-bank-writer");
     modified = true;
   }
   if (modified) {
@@ -289,7 +365,7 @@ async function checkAndCleanOpenCodeCache() {
   }
   return { cleaned: false };
 }
-async function install() {
+async function install(customModel) {
   log(`
 ${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}
 `);
@@ -308,7 +384,7 @@ ${colors.bold}Memory Bank Skill Installer v${VERSION}${colors.reset}
     logDetail(r1.details || "");
     results.push(r1);
     logStep(2, 2, "Configuring plugin...");
-    const r2 = await installPluginToConfig(undoStack);
+    const r2 = await installPluginToConfig(undoStack, customModel);
     logDetail(r2.details || "");
     results.push(r2);
     await writeManifest(manifestFiles, undoStack);
@@ -416,21 +492,39 @@ function showHelp() {
 ${colors.bold}Memory Bank Skill v${VERSION}${colors.reset}
 
 Usage:
-  bunx memory-bank-skill <command>
+  bunx memory-bank-skill <command> [options]
 
 Commands:
   install    Install Memory Bank skill and plugin
   doctor     Check installation status
 
+Options:
+  --model <model>  Specify model for memory-bank-writer agent
+                   Default: cliproxy/claude-opus-4-5-20251101
+
 Examples:
   bunx memory-bank-skill install
+  bunx memory-bank-skill install --model anthropic/claude-sonnet-4-5
   bunx memory-bank-skill doctor
 `);
 }
-var command = process.argv[2];
+function parseArgs() {
+  const args = process.argv.slice(2);
+  let command;
+  let model;
+  for (let i = 0;i < args.length; i++) {
+    if (args[i] === "--model" && args[i + 1]) {
+      model = args[++i];
+    } else if (!args[i].startsWith("-")) {
+      command = args[i];
+    }
+  }
+  return { command, model };
+}
+var { command, model } = parseArgs();
 switch (command) {
   case "install":
-    install();
+    install(model);
     break;
   case "doctor":
     doctor();
