@@ -1113,12 +1113,14 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         const command = output.args?.command
         if (!command || typeof command !== "string") return
         
-        // Check if command targets memory-bank/ (case-insensitive on macOS/Windows)
+        // Check if command targets memory-bank/ directory (not files like memory-bank.ts)
+        // Pattern: match "memory-bank" only when followed by / or \ (directory) or end/space/quote
+        // NOT when followed by . or _ or - (filename continuation like memory-bank.ts)
         const cmdToCheck = isCaseInsensitiveFS ? command.toLowerCase() : command
         const mbPattern = isCaseInsensitiveFS 
-          ? /(?:^|[^a-z0-9_-])memory-bank(?:$|[^a-z0-9_-])/
-          : /(?:^|[^A-Za-z0-9_-])memory-bank(?:$|[^A-Za-z0-9_-])/
-        if (!mbPattern.test(cmdToCheck) && !cmdToCheck.startsWith("memory-bank")) return
+          ? /(?:^|[^a-z0-9_.-])memory-bank(?:[\/\\]|$|\s|['"])/
+          : /(?:^|[^A-Za-z0-9_.-])memory-bank(?:[\/\\]|$|\s|['"])/
+        if (!mbPattern.test(cmdToCheck)) return
 
         // Shell control operators that indicate compound commands
         const hasShellOperators = /[;&|]|\$\(|`/.test(command)
@@ -1127,7 +1129,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         if (!hasShellOperators) {
           const readOnlyPatterns = [
             /^\s*(ls|cat|head|tail|less|more|grep|rg|ag|find|tree|wc|file|stat)\b/i,
-            /^\s*git\s+(status|log|diff|show|blame)\b/i,
+            /^\s*git\b/i,
           ]
           if (readOnlyPatterns.some(p => p.test(command))) return
         }
@@ -1146,7 +1148,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           /\brm\b/i,
           /\bmkdir\b/i,
           /\btouch\b/i,
-          /\bgit\s+(add|rm|mv|apply|checkout|restore|reset|clean|stash|commit)\b/i,
+
           /\bpython\b.*\bopen\b/i,
         ]
 
