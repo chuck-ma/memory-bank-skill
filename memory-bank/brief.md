@@ -27,5 +27,4 @@ bunx memory-bank-skill install
 
 ## 版本
 
-- 当前版本：5.6.0
-- 主要更新：新增 Memory-first 原则，读写规则对称
+运行 `bunx memory-bank-skill doctor` 查看当前版本。
