@@ -215,7 +215,7 @@ delegate_task(
 |------|------|------|
 | Plugin 状态管理 | `plugin/memory-bank.ts` | 跟踪 session 和 writer 白名单 |
 | `tool.execute.before` hook | `plugin/memory-bank.ts` | 拦截非 writer 的写入 |
-| Writer Skill | `skill/memory-bank-writer/` | 定义写入规则 |
+| Writer Skill | `skills/memory-bank-writer/` | 定义写入规则 |
 | Agent 配置 | `opencode.json` 或 `AGENTS.md` | 注册 writer agent |
 
 ---
@@ -314,3 +314,4 @@ delegate_task(
 | 2026-01-28 | v5.7.1: 修复 Bash 文件名误判 |
 | 2026-01-28 | v5.7.3: 放行所有 git 命令 |
 | 2026-01-28 | v5.7.4-5.7.7: CLI 自动注册 writer agent + --model 参数 |
+| 2026-01-28 | v5.8.0: 修复 skill 路径（skill/ → skills/） |
