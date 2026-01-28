@@ -5,7 +5,7 @@
 
 ## 当前焦点
 
-- 发布 v5.8.0：修复 skill 路径 + 写入守卫完整版
+- 在实际项目中测试 Memory-first V2 效果
 
 ## 下一步
 
@@ -21,6 +21,7 @@
 - [x] 记录 bun registry 同步延迟问题
 - [x] 写入守卫 v5.7.1-5.7.7: Bash 修复 + git 放行 + CLI agent 注册
 - [x] v5.8.0: 修复 skill 路径（skill/ → skills/）
+- [x] Memory-first V2 方案实现（Plugin 极简注入 + Skill 渐进式披露 + 职责分离）
 
 ## 阻塞项
 
@@ -30,6 +31,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-01-28 | 发布 5.9.0：Memory-first V2（极简注入 + 职责分离） |
 | 2026-01-28 | 发布 5.8.0：修复 skill 路径为复数 skills/ |
 | 2026-01-28 | 发布 5.7.0：realpath + 大小写 + MultiEdit/apply_patch 支持 |
 | 2026-01-28 | 发布 5.6.2：CLI 版本号从 package.json 读取 |
