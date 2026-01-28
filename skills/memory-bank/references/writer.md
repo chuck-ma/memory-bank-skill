@@ -1,11 +1,6 @@
----
-name: memory-bank-writer
-description: Memory Bank 专用写入 Agent - 负责所有 memory-bank/ 目录的写入操作
----
+# Memory Bank Writer 规则
 
-# Memory Bank Writer
-
-你是 Memory Bank 的专用写入 Agent。只有你能写入 `memory-bank/` 目录。
+> 此文档定义 Memory Bank 的写入规则，由主 Agent 或 Writer Agent 执行。
 
 ## 写入触发
 
@@ -74,22 +69,48 @@ description: Memory Bank 专用写入 Agent - 负责所有 memory-bank/ 目录�
 | `patterns.md` | 追加内容（不覆盖） |
 | `_index.md` | 每次写入后自动更新 |
 
-## 确认职责分离
+## 职责分离（核心原则）
 
-**重要**：用户确认由主 Agent 前置完成，Writer 只负责执行。
+**重要**：主 Agent 只说诉求，Writer 自主判断写入目标。
 
 | 步骤 | 负责方 | 动作 |
 |------|--------|------|
-| 1 | 主 Agent | 决定写入内容，输出计划 |
+| 1 | 主 Agent | 输出更新计划（只说诉求和要点） |
 | 2 | 主 Agent | 跟用户确认 |
 | 3 | 用户 | 确认或拒绝 |
-| 4 | 主 Agent | delegate 给 Writer（附带完整内容） |
-| 5 | **Writer** | **直接执行**（不再确认） |
+| 4 | 主 Agent | delegate 给 Writer（**只传诉求，禁止指定路径**） |
+| 5 | **Writer** | **自主判断写入目标** → 执行写入 |
 
-Writer 收到的 prompt 应包含：
-- 明确的写入目标（文件路径）
-- 完整的写入内容
-- 是创建还是更新
+### 主 Agent 的 prompt 格式
+
+```
+诉求：{语义意图，如"记录 SDK pool 简化的设计变更"}
+背景：{简要上下文}
+要点：
+1. {要点1}
+2. {要点2}
+```
+
+**禁止**：主 Agent 在 prompt 中指定文件路径。
+
+### Writer 自主判断流程
+
+```
+1. 解析诉求类型：
+   - 设计变更 → docs/design-*.md
+   - 新需求 → requirements/REQ-*.md
+   - 技术决策 → patterns.md
+   - Bug/踩坑 → learnings/**/*.md
+   - 焦点变更 → active.md
+
+2. Glob 检查现有文档：
+   - 找到相关文档（文件名/标题匹配）→ 更新
+   - 没找到 → 创建新文档
+
+3. 执行写入 + 更新 _index.md
+
+4. 输出决策报告
+```
 
 ## 执行输出格式
 
@@ -212,3 +233,121 @@ Plugin 层面强制执行：
 | Bash 启发式 | 变量间接、eval、脚本无法检测 |
 | Symlinks | 通过 symlink 可绕过路径检查 |
 | 首次写入 | 可能因 race condition 被阻止一次（重试即可） |
+
+---
+
+## 区块分离
+
+每个文件分为两个区块：
+
+```markdown
+<!-- MACHINE_BLOCK_START -->
+（AI 自动维护，用户不要改）
+<!-- MACHINE_BLOCK_END -->
+
+<!-- USER_BLOCK_START -->
+（用户自由编辑，AI 不覆盖）
+<!-- USER_BLOCK_END -->
+```
+
+冲突处理：检测到用户修改机器区块时，提示用户选择保留哪个版本。
+
+---
+
+## 自动提交模式
+
+当用户回复"更新并提交"或"初始化并提交"时，执行以下流程：
+
+### Preflight 检查（必须全部通过）
+
+1. **确认是 git 仓库**：`git rev-parse --is-inside-work-tree`
+2. **确认不在 merge/rebase/cherry-pick 中**
+3. **确认无冲突文件**：`git diff --name-only --diff-filter=U` 必须为空
+4. **确认有 git 身份**：`git config user.name` 和 `git config user.email` 非空
+5. **确认有变更可提交**：`git status --porcelain` 非空
+
+### 执行流程
+
+1. **输出计划**，包含：
+   - 将要更新的 memory-bank 文件
+   - 将要提交的所有变更
+   - **风险检查提醒**：确认没有 `.env`、凭证、大文件会被提交
+
+2. **等待用户确认**
+
+3. **执行更新**：
+   - 写入 memory-bank 文件
+   - 执行 `git add -A`
+   - 执行 `git commit -m "chore(memory-bank): update <files>"`
+
+### Commit Message 格式
+
+单文件：
+```
+chore(memory-bank): update active.md
+
+Auto-committed by Memory Bank.
+```
+
+多文件：
+```
+chore(memory-bank): update memory bank
+
+Files updated:
+- memory-bank/active.md
+- memory-bank/_index.md
+```
+
+---
+
+## 整理记忆（Organize）
+
+当用户触发"整理记忆"时，分析 `memory-bank/` 目录结构，给出分类建议。
+
+### 触发词
+
+- 中文：`整理记忆`、`归类记忆`
+- 英文：`organize memory`、`tidy memory bank`
+
+### 执行流程
+
+```
+Phase A: 分析（默认）
+    - 扫描 memory-bank/**/*.md
+    - 生成迁移建议 + 新目录建议
+    - 输出建议清单，不做任何改动
+
+Phase B: 执行（用户确认后）
+    - 用户回复 `apply` / `确认执行`
+    - 创建新目录、移动文件、更新索引
+```
+
+### 保护列表（永不迁移）
+
+- `_index.md`、`brief.md`、`tech.md`、`active.md`、`patterns.md`、`progress.md`
+- `archive/**` 下所有文件
+
+### 强规则路由
+
+| 文件模式 | 目标目录 |
+|----------|----------|
+| `REQ-*.md` | `requirements/` |
+| `design-*.md`、`architecture.md` | `docs/` |
+| `active_YYYY-MM.md` | `archive/` |
+| `YYYY-MM-DD-*bug*.md` | `learnings/bugs/` |
+| `YYYY-MM-DD-*perf*.md` | `learnings/performance/` |
+
+### 新目录建议
+
+仅在以下条件**全部满足**时建议新建子目录：
+
+1. **父目录限制**：只允许在 `docs/`、`learnings/` 下新建
+2. **数量阈值**：同主题文件数 >= 4
+3. **主题来源**：文件名或标题中的高频关键词
+
+### 执行边界
+
+- 只改 `memory-bank/` 内文件
+- 目标已存在同名文件时跳过，不覆盖
+- `apply` 只执行强规则命中的迁移建议
+- 新目录建议需显式选择：`apply 1` 或 `apply dirs`
