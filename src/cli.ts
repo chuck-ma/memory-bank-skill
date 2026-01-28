@@ -227,7 +227,7 @@ async function installSkillFiles(
   undoStack: UndoAction[],
   manifestFiles: { path: string; sha256: string }[]
 ): Promise<InstallResult> {
-  const skills = ["memory-bank", "memory-bank-writer"]
+  const skills = ["memory-bank"]
   const baseDestDir = join(homedir(), ".config", "opencode", "skills")
   let anyExisted = false
 
