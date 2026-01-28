@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 // package.json
 var package_default = {
   name: "memory-bank-skill",
-  version: "5.8.0",
+  version: "5.10.0",
   description: "Memory Bank - \u9879\u76EE\u8BB0\u5FC6\u7CFB\u7EDF\uFF0C\u8BA9 AI \u52A9\u624B\u5728\u6BCF\u6B21\u5BF9\u8BDD\u4E2D\u90FD\u80FD\u5FEB\u901F\u7406\u89E3\u9879\u76EE\u4E0A\u4E0B\u6587",
   type: "module",
   main: "dist/plugin.js",
