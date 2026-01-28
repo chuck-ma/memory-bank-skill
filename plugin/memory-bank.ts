@@ -209,68 +209,22 @@ function truncateToBudget(text: string, budget: number): string {
 }
 
 async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<MemoryBankContextResult | null> {
-  const fnStart = Date.now()
   if (DEBUG) console.error(`[MB-DEBUG] buildMemoryBankContextWithMeta START projectRoot=${projectRoot}`)
   
-  const parts: string[] = []
-  const files: { relPath: string; chars: number }[] = []
-
-  for (const rel of MEMORY_BANK_FILES) {
-    const fileStart = Date.now()
-    const abs = path.join(projectRoot, rel)
-    if (DEBUG) console.error(`[MB-DEBUG] reading ${rel}...`)
-    const content = await readTextCached(abs)
-    if (DEBUG) console.error(`[MB-DEBUG] read ${rel} done, hasContent=${!!content}, elapsed=${Date.now() - fileStart}ms`)
-    if (!content) continue
-    const trimmed = content.trim()
-    if (!trimmed) continue
-    parts.push(`## ${rel}\n\n${trimmed}`)
-    files.push({ relPath: rel, chars: trimmed.length })
+  const mbPath = path.join(projectRoot, "memory-bank")
+  try {
+    await stat(mbPath)
+  } catch {
+    if (DEBUG) console.error(`[MB-DEBUG] memory-bank not found`)
+    return null
   }
-  if (DEBUG) console.error(`[MB-DEBUG] all files read, parts=${parts.length}, totalElapsed=${Date.now() - fnStart}ms`)
 
-  if (parts.length === 0) return null
-
-  const fileList = files.map(f => f.relPath.replace("memory-bank/", "")).join(", ")
-  const totalChars = files.reduce((sum, f) => sum + f.chars, 0)
-
-  const header =
-    `# Memory Bank Bootstrap (Auto-injected by OpenCode plugin)\n\n` +
-    `Use \`memory-bank/_index.md\` to locate additional context files.\n` +
-    `Read more files from \`memory-bank/\` as needed based on the task.\n\n` +
-    `**AI 行为指令**：\n` +
-    `- 每次回复末尾加一行确认：\`| 📚 Memory Bank | ${fileList} (${totalChars.toLocaleString()} chars) |\`\n` +
-`- **Memory-first（核心原则）**：\n` +
-    `  - 任何问题先查 _index.md 并打开相关文档（active.md/brief.md/tech.md/docs/requirements/learnings/patterns.md）\n` +
-    `  - 找到答案 → 引用文件路径直接回答；_index.md 与对应目录检索无果或确认已过时 → 才读代码\n` +
-    `  - 文档与代码不一致时以代码为准，但必须提议更新文档\n` +
-    `  - 若因文档缺失而读了代码 → 这本身就是写入触发点，需点名要补的文件路径\n` +
-`- **文档驱动开发**：\n` +
-    `  - 方案讨论完成后，**先写设计文档到 memory-bank/docs/，再写代码**\n` +
-    `  - 设计文档是契约，代码实现要符合文档\n` +
-    `  - 实现完成后回顾：如有偏差，决定是改文档还是改实现\n` +
-`- **写入触发场景**（语义判断，非关键词匹配）：\n` +
-    `  - 方案讨论确定 / 设计变更（\"重新设计\"、\"改一下设计\"、\"那就这样吧\"）→ 检查 docs/design-*.md 是否已存在，存在则更新，否则创建\n` +
-    `  - 用户描述新功能/需求（\"我需要...\"、\"能不能加...\"、\"帮我做...\"、\"要实现...\"）→ requirements/\n` +
-    `  - 用户做出技术选型（\"我们用 X 吧\"、\"决定采用...\"、\"选择...\"）→ patterns.md\n` +
-    `  - 修复了 bug 或踩坑经验（\"原来问题是...\"、\"这个坑是...\"、\"发现...\"）→ learnings/\n` +
-    `  - AI 修改了代码/配置文件 → active.md（如涉及 bug 修复则同时 learnings/）\n` +
-    `  - 当前任务完成，焦点切换 → active.md\n` +
-`- **Todo 创建规则（必须）**：\n` +
-    `  - 方案讨论完成后开始落地：第一项必须是\"写入设计文档到 memory-bank/docs/\"\n` +
-    `  - 最后一项必须是\"更新 Memory Bank\"（检查触发场景并更新相应文件）\n\n` +
-    `---\n\n`
-
-  const wrapped =
+  const text =
     `${SENTINEL_OPEN}\n` +
-    header +
-    parts.join("\n\n---\n\n") +
-    `\n${SENTINEL_CLOSE}`
+    `**执行任何工作或回答问题之前，必须先加载 \`/memory-bank\` skill。**\n` +
+    `${SENTINEL_CLOSE}`
 
-  const budget = maxChars()
-  const truncated = wrapped.length > budget
-  const text = truncateToBudget(wrapped, budget)
-  return { text, files, totalChars, truncated }
+  return { text, files: [], totalChars: 0, truncated: false }
 }
 
 async function buildMemoryBankContext(projectRoot: string): Promise<string | null> {
