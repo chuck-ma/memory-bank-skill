@@ -30,6 +30,14 @@ bunx memory-bank-skill install
 
 然后 **重启 OpenCode**，完成！
 
+### 自定义模型
+
+默认使用 `cliproxy/claude-opus-4-5-20251101`，可通过 `--model` 指定：
+
+```bash
+bunx memory-bank-skill install --model anthropic/claude-sonnet-4-5
+```
+
 ### 验证安装
 
 ```bash
@@ -40,10 +48,10 @@ bunx memory-bank-skill doctor
 
 | 操作 | 目标路径 |
 |------|----------|
-| 复制 Skill 文件 | `~/.config/opencode/skill/memory-bank/` |
-| 配置 opencode.json | 添加 `permission.skill=allow`，注册插件包 `memory-bank-skill` |
+| 复制 Skill 文件 | `~/.config/opencode/skill/memory-bank/` 和 `memory-bank-writer/` |
+| 配置 opencode.json | 添加 `permission.skill=allow`，注册插件和 agent |
+| 注册 Agent | 添加 `memory-bank-writer` agent（用于写入守卫） |
 | 写入 manifest | `~/.config/opencode/skill/memory-bank/.manifest.json` |
-| 依赖安装 | 不自动执行；如需手动运行 `cd ~/.config/opencode && bun install` |
 
 ---
 
@@ -184,5 +192,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 5.4.0
-- **主要更新**: 新增"整理记忆"功能 - AI 自动分析文件分类，给出迁移和新建目录建议
+- **版本**: 5.7.5
+- **主要更新**: 写入守卫 + Writer Agent 自动注册
