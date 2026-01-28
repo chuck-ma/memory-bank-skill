@@ -6,7 +6,7 @@
  * 2. Remind AI to update Memory Bank when session ends (currently disabled)
  */
 import type { Plugin, PluginClient } from "@opencode-ai/plugin"
-import { stat, readFile, access } from "node:fs/promises"
+import { stat, readFile, access, realpath } from "node:fs/promises"
 import { execSync } from "node:child_process"
 import path from "node:path"
 
@@ -79,6 +79,11 @@ const rootStates = new Map<string, RootState>()
 const sessionMetas = new Map<string, SessionMeta>()
 const memoryBankExistsCache = new Map<string, boolean>()
 const fileCache = new Map<string, CacheEntry>()
+
+const WRITER_AGENT_NAME = "memory-bank-writer"
+const sessionsById = new Map<string, { parentID?: string }>()
+const writerSessionIDs = new Set<string>()
+const agentBySessionID = new Map<string, string>()
 
 // ============================================================================
 // Utilities
@@ -805,7 +810,10 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
         if (event.type === "session.created") {
           sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0 })
-          log.info("Session created", { sessionId })
+          
+          const parentID = info?.parentID
+          sessionsById.set(sessionId, { parentID })
+          log.info("Session created", { sessionId, parentID })
         }
 
         if (event.type === "session.deleted") {
@@ -816,6 +824,9 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             }
           }
           sessionMetas.delete(sessionId)
+          sessionsById.delete(sessionId)
+          writerSessionIDs.delete(sessionId)
+          agentBySessionID.delete(sessionId)
           log.info("Session deleted", { sessionId })
         }
 
@@ -895,6 +906,16 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
               meta.planOutputted = true
               log.info("Plan outputted detected", { sessionId })
             }
+
+            const agentName = (message as any)?.agent
+            if (agentName) {
+              agentBySessionID.set(sessionId, agentName)
+              const sessionInfo = sessionsById.get(sessionId)
+              if (agentName === WRITER_AGENT_NAME && sessionInfo?.parentID) {
+                writerSessionIDs.add(sessionId)
+                log.info("Writer agent session registered", { sessionId, agentName, parentID: sessionInfo.parentID })
+              }
+            }
           }
         }
 
@@ -925,6 +946,219 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         // }
       } catch (err) {
         log.error("event handler error:", String(err))
+      }
+    },
+
+    "tool.execute.before": async (input, output) => {
+      const { tool, sessionID } = input
+      
+      // Detect case-insensitive filesystem (macOS, Windows)
+      const isCaseInsensitiveFS = process.platform === "darwin" || process.platform === "win32"
+      const normalize = (p: string) => isCaseInsensitiveFS ? p.toLowerCase() : p
+      
+      // Pre-compute real paths for project root and memory-bank (cached per call)
+      let realProjectRoot: string | null = null
+      let realMemoryBankDir: string | null = null
+      const getRealPaths = async () => {
+        if (realProjectRoot === null) {
+          try {
+            realProjectRoot = normalize(await realpath(projectRoot))
+          } catch {
+            realProjectRoot = normalize(projectRoot)
+          }
+          try {
+            realMemoryBankDir = normalize(await realpath(path.join(projectRoot, "memory-bank")))
+          } catch {
+            realMemoryBankDir = normalize(path.join(projectRoot, "memory-bank"))
+          }
+        }
+        return { realProjectRoot, realMemoryBankDir }
+      }
+      
+      // Helper: check if path is under memory-bank/ (checks both lexical and physical paths)
+      const isMemoryBankPath = async (targetPath: string): Promise<boolean> => {
+        const { realProjectRoot: rootReal, realMemoryBankDir: mbReal } = await getRealPaths()
+        const absPath = path.isAbsolute(targetPath) ? targetPath : path.resolve(projectRoot, targetPath)
+        
+        // Lexical check (based on path string)
+        const lexicalNorm = normalize(absPath)
+        const lexicalMBDir = normalize(path.join(projectRoot, "memory-bank"))
+        const lexicalMatch = lexicalNorm === lexicalMBDir ||
+                            lexicalNorm.startsWith(lexicalMBDir + path.sep) ||
+                            lexicalNorm.startsWith(lexicalMBDir + "/")
+        
+        // Physical check (resolve symlinks if path exists)
+        let physicalMatch = false
+        try {
+          const resolved = normalize(await realpath(absPath))
+          physicalMatch = resolved === mbReal ||
+                         resolved.startsWith(mbReal + path.sep) ||
+                         resolved.startsWith(mbReal + "/")
+        } catch {
+          // Path doesn't exist, try resolving parent directory
+          try {
+            const parentResolved = normalize(await realpath(path.dirname(absPath)))
+            const targetName = path.basename(absPath)
+            const fullResolved = path.join(parentResolved, targetName)
+            physicalMatch = fullResolved === mbReal ||
+                           fullResolved.startsWith(mbReal + path.sep) ||
+                           fullResolved.startsWith(mbReal + "/")
+          } catch {
+            // Parent also doesn't exist, rely on lexical check only
+          }
+        }
+        
+        // Block if EITHER lexical or physical path is under memory-bank
+        return lexicalMatch || physicalMatch
+      }
+
+      // Helper: check if writer session is allowed
+      const isWriterAllowed = (sid: string): boolean => {
+        if (writerSessionIDs.has(sid)) return true
+        
+        // Late registration: if agent is already known but not yet in writerSessionIDs
+        const sessionInfo = sessionsById.get(sid)
+        const agentName = agentBySessionID.get(sid)
+        if (agentName === WRITER_AGENT_NAME && sessionInfo?.parentID) {
+          writerSessionIDs.add(sid)
+          log.info("Writer agent late-registered", { sessionID: sid, agentName })
+          return true
+        }
+        return false
+      }
+
+      // Helper: block with error
+      const blockWrite = (reason: string, context: Record<string, unknown>) => {
+        log.warn("Memory Bank write blocked", { sessionID, tool, reason, ...context })
+        throw new Error(
+          `[Memory Bank Guard] 写入 memory-bank/ 受限。\n` +
+          `请使用 delegate_task 调用 memory-bank-writer agent 来更新 Memory Bank。\n` +
+          `示例: delegate_task(subagent_type="memory-bank-writer", load_skills=["memory-bank-writer"], prompt="更新...")`
+        )
+      }
+      
+      // Helper: extract all paths from tool args (handles multi-file tools)
+      const extractPaths = (toolName: string, args: Record<string, unknown>): string[] => {
+        const paths: string[] = []
+        const pathArgs = ["filePath", "path", "filename", "file", "dest", "destination", "target"]
+        
+        // Single path args
+        for (const arg of pathArgs) {
+          const val = args[arg]
+          if (typeof val === "string" && val.trim()) paths.push(val)
+        }
+        
+        // MultiEdit: args.edits[*].path or args.edits[*].filePath
+        if (toolName === "multiedit" && Array.isArray(args.edits)) {
+          for (const edit of args.edits) {
+            if (typeof edit === "object" && edit !== null) {
+              const e = edit as Record<string, unknown>
+              if (typeof e.path === "string") paths.push(e.path)
+              if (typeof e.filePath === "string") paths.push(e.filePath)
+            }
+          }
+        }
+        
+        // apply_patch: parse patch text for file headers (supports multiple formats)
+        if (toolName === "apply_patch" || toolName === "patch") {
+          const patchText = args.patchText ?? args.patch ?? args.diff
+          if (typeof patchText === "string") {
+            // Git diff format: +++ b/path or --- a/path
+            const gitDiffPattern = /^(?:\+\+\+|---)\s+[ab]\/(.+)$/gm
+            let match
+            while ((match = gitDiffPattern.exec(patchText)) !== null) {
+              if (match[1]) paths.push(match[1])
+            }
+            // OpenCode format: *** Add File: path, *** Update File: path, *** Delete File: path
+            const openCodePattern = /^\*\*\*\s+(?:Add|Update|Delete|Move to)\s+(?:File:\s*)?(.+)$/gm
+            while ((match = openCodePattern.exec(patchText)) !== null) {
+              if (match[1]) paths.push(match[1].trim())
+            }
+          }
+        }
+        
+        return [...new Set(paths)] // dedupe
+      }
+
+      // === Check file-writing tools (Write, Edit, MultiEdit, apply_patch, etc.) ===
+      const fileWriteTools = ["write", "edit", "multiedit", "apply_patch", "patch"]
+      const toolLower = tool.toLowerCase()
+      if (fileWriteTools.includes(toolLower)) {
+        const targetPaths = extractPaths(toolLower, output.args || {})
+        if (targetPaths.length === 0) return
+        
+        for (const targetPath of targetPaths) {
+          if (!(await isMemoryBankPath(targetPath))) continue
+          
+          // File type restriction - only allow *.md files
+          if (!targetPath.toLowerCase().endsWith(".md")) {
+            blockWrite("only .md files allowed", { targetPath })
+          }
+
+          if (isWriterAllowed(sessionID)) {
+            log.debug("Writer agent write allowed", { sessionID, tool, targetPath })
+            return
+          }
+
+          blockWrite("not writer agent", { 
+            targetPath,
+            isSubAgent: !!sessionsById.get(sessionID)?.parentID,
+            agentName: agentBySessionID.get(sessionID),
+          })
+        }
+      }
+
+      // === Check Bash tool for write operations ===
+      if (tool.toLowerCase() === "bash") {
+        const command = output.args?.command
+        if (!command || typeof command !== "string") return
+        
+        // Check if command targets memory-bank/ (case-insensitive on macOS/Windows)
+        const cmdToCheck = isCaseInsensitiveFS ? command.toLowerCase() : command
+        const mbPattern = isCaseInsensitiveFS 
+          ? /(?:^|[^a-z0-9_-])memory-bank(?:$|[^a-z0-9_-])/
+          : /(?:^|[^A-Za-z0-9_-])memory-bank(?:$|[^A-Za-z0-9_-])/
+        if (!mbPattern.test(cmdToCheck) && !cmdToCheck.startsWith("memory-bank")) return
+
+        // Shell control operators that indicate compound commands
+        const hasShellOperators = /[;&|]|\$\(|`/.test(command)
+
+        // Read-only commands allowlist - ONLY for simple commands without operators
+        if (!hasShellOperators) {
+          const readOnlyPatterns = [
+            /^\s*(ls|cat|head|tail|less|more|grep|rg|ag|find|tree|wc|file|stat)\b/i,
+            /^\s*git\s+(status|log|diff|show|blame)\b/i,
+          ]
+          if (readOnlyPatterns.some(p => p.test(command))) return
+        }
+
+        // Write operation patterns (redirects, known writers)
+        const writePatterns = [
+          /(?:^|[^2])>/, // stdout redirect (but not 2> stderr alone)
+          />>/, // append redirect
+          /<</, // heredoc
+          /\|/, // pipe (can be used with tee, etc.)
+          /\btee\b/i,
+          /\bsed\s+-i/i,
+          /\bperl\s+-[ip]/i,
+          /\bcp\b/i,
+          /\bmv\b/i,
+          /\brm\b/i,
+          /\bmkdir\b/i,
+          /\btouch\b/i,
+          /\bgit\s+(add|rm|mv|apply|checkout|restore|reset|clean|stash|commit)\b/i,
+          /\bpython\b.*\bopen\b/i,
+        ]
+
+        const isWriteOperation = writePatterns.some(p => p.test(command))
+        if (!isWriteOperation) return
+
+        if (isWriterAllowed(sessionID)) {
+          log.debug("Writer agent bash write allowed", { sessionID, command: command.slice(0, 100) })
+          return
+        }
+
+        blockWrite("bash write operation", { command: command.slice(0, 200) })
       }
     },
   }

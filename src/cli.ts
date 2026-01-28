@@ -15,12 +15,13 @@ import { homedir } from "node:os"
 import { join, dirname } from "node:path"
 import { createHash } from "node:crypto"
 import { fileURLToPath } from "node:url"
+import pkg from "../package.json"
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const VERSION = "5.6.0"
+const VERSION = pkg.version
 // ============================================================================
 // Types
 // ============================================================================
