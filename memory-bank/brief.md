@@ -14,8 +14,8 @@ OpenCode 插件，为 AI 编码助手提供项目记忆系统。通过结构化 
 
 | 组件 | 路径 | 用途 |
 |-----|------|------|
-| Plugin | `plugin/memory-bank.ts` | 自动注入上下文 + 提醒更新 |
-| Skill | `skill/memory-bank/` | 定义记忆系统规则 |
+| Plugin | `plugin/memory-bank.ts` | 自动注入上下文 + 写入守卫 |
+| Skill | `skills/memory-bank/` | 定义记忆系统规则 |
 | CLI | `src/cli.ts` | 一键安装：`bunx memory-bank-skill install` |
 | Templates | `templates/` | Memory Bank 文件模板 |
 
