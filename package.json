@@ -1,6 +1,6 @@
 {
   "name": "memory-bank-skill",
-  "version": "5.10.0",
+  "version": "5.11.0",
   "description": "Memory Bank - 项目记忆系统，让 AI 助手在每次对话中都能快速理解项目上下文",
   "type": "module",
   "main": "dist/plugin.js",

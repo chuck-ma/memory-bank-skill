@@ -192,5 +192,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 5.8.0
-- **主要更新**: 修复 skill 路径（`skill/` → `skills/`）+ 写入守卫 + Writer Agent 自动注册
+- **版本**: 5.11.0
+- **主要更新**: Writer 自动清理（目录文件数检查 + active.md 归档）+ 确认职责分离
