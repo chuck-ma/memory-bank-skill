@@ -228,11 +228,11 @@ async function installSkillFiles(
   manifestFiles: { path: string; sha256: string }[]
 ): Promise<InstallResult> {
   const skills = ["memory-bank", "memory-bank-writer"]
-  const baseDestDir = join(homedir(), ".config", "opencode", "skill")
+  const baseDestDir = join(homedir(), ".config", "opencode", "skills")
   let anyExisted = false
 
   for (const skill of skills) {
-    const srcDir = join(packageRoot, "skill", skill)
+    const srcDir = join(packageRoot, "skills", skill)
     const destDir = join(baseDestDir, skill)
 
     if (!(await exists(srcDir))) {
@@ -382,7 +382,7 @@ async function writeManifest(
     homedir(),
     ".config",
     "opencode",
-    "skill",
+    "skills",
     "memory-bank",
     ".manifest.json"
   )
@@ -528,7 +528,7 @@ async function doctor(): Promise<void> {
 
   let allOk = true
 
-  const skillPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", "SKILL.md")
+  const skillPath = join(homedir(), ".config", "opencode", "skills", "memory-bank", "SKILL.md")
   const skillOk = await exists(skillPath)
   if (skillOk) {
     log(`${colors.green}✓${colors.reset} Skill files`)
@@ -590,7 +590,7 @@ async function doctor(): Promise<void> {
     } catch {}
   }
 
-  const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json")
+  const manifestPath = join(homedir(), ".config", "opencode", "skills", "memory-bank", ".manifest.json")
   if (await exists(manifestPath)) {
     try {
       const manifest: Manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"))

@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 // package.json
 var package_default = {
   name: "memory-bank-skill",
-  version: "5.7.7",
+  version: "5.8.0",
   description: "Memory Bank - \u9879\u76EE\u8BB0\u5FC6\u7CFB\u7EDF\uFF0C\u8BA9 AI \u52A9\u624B\u5728\u6BCF\u6B21\u5BF9\u8BDD\u4E2D\u90FD\u80FD\u5FEB\u901F\u7406\u89E3\u9879\u76EE\u4E0A\u4E0B\u6587",
   type: "module",
   main: "dist/plugin.js",
@@ -19,7 +19,7 @@ var package_default = {
   },
   files: [
     "dist/",
-    "skill/",
+    "skills/",
     "templates/"
   ],
   scripts: {
@@ -184,10 +184,10 @@ async function cleanupBackups(undoStack) {
 }
 async function installSkillFiles(packageRoot, undoStack, manifestFiles) {
   const skills = ["memory-bank", "memory-bank-writer"];
-  const baseDestDir = join(homedir(), ".config", "opencode", "skill");
+  const baseDestDir = join(homedir(), ".config", "opencode", "skills");
   let anyExisted = false;
   for (const skill of skills) {
-    const srcDir = join(packageRoot, "skill", skill);
+    const srcDir = join(packageRoot, "skills", skill);
     const destDir = join(baseDestDir, skill);
     if (!await exists(srcDir)) {
       throw new Error(`Skill source not found: ${srcDir}`);
@@ -302,7 +302,7 @@ async function installPluginToConfig(undoStack, customModel) {
   };
 }
 async function writeManifest(manifestFiles, undoStack) {
-  const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json");
+  const manifestPath = join(homedir(), ".config", "opencode", "skills", "memory-bank", ".manifest.json");
   const manifest = {
     version: VERSION,
     installedAt: new Date().toISOString(),
@@ -412,7 +412,7 @@ async function doctor() {
 ${colors.bold}Memory Bank Skill Doctor v${VERSION}${colors.reset}
 `);
   let allOk = true;
-  const skillPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", "SKILL.md");
+  const skillPath = join(homedir(), ".config", "opencode", "skills", "memory-bank", "SKILL.md");
   const skillOk = await exists(skillPath);
   if (skillOk) {
     log(`${colors.green}\u2713${colors.reset} Skill files`);
@@ -469,7 +469,7 @@ ${colors.bold}Memory Bank Skill Doctor v${VERSION}${colors.reset}
       }
     } catch {}
   }
-  const manifestPath = join(homedir(), ".config", "opencode", "skill", "memory-bank", ".manifest.json");
+  const manifestPath = join(homedir(), ".config", "opencode", "skills", "memory-bank", ".manifest.json");
   if (await exists(manifestPath)) {
     try {
       const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"));
