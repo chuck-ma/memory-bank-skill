@@ -5,14 +5,12 @@ description: 项目记忆系统 - 自动读取上下文、自动沉淀发现、�
 
 # Memory Bank Skill
 
-## 快速入口
+## 详细规则
 
-| 操作 | 详细规则 |
-|------|----------|
-| **读取** | [references/reader.md](references/reader.md) |
-| **写入** | [references/writer.md](references/writer.md) |
-| **模板** | [references/templates.md](references/templates.md) |
-| **高级规则** | [references/advanced-rules.md](references/advanced-rules.md) |
+- 需要了解**读取流程和规则**时，见 [references/reader.md](references/reader.md)
+- 需要了解**写入流程和约束**时，见 [references/writer.md](references/writer.md)
+- 需要**文件模板**时，见 [references/templates.md](references/templates.md)
+- 需要了解**索引规范、预算、冲突处理**等高级规则时，见 [references/advanced-rules.md](references/advanced-rules.md)
 
 ---
 
