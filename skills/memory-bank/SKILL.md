@@ -89,6 +89,12 @@ memory-bank/
 
 ### 写入阶段
 
+**核心约束**：主 Agent **禁止直接写入** `memory-bank/`，必须 delegate 给 `memory-bank-writer`。
+
+流程：
+1. 主 Agent 输出更新计划（诉求 + 要点）
+2. 用户确认
+3. `delegate_task(subagent_type="memory-bank-writer", load_skills=["memory-bank"], prompt="诉求：...")`
 
 详见 [writer.md](references/writer.md)
 
