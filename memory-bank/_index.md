@@ -13,7 +13,7 @@
 | docs/design-archive.md | 归档功能设计 | 归档 active.md 的触发条件与流程 | 2026-01-23 | 93 |
 | docs/design-transparency.md | 读写透明设计 | 读写透明性与提示机制设计 | 2026-01-23 | 130 |
 | docs/design-reminder-types.md | 提醒类型设计 | INIT/UPDATE 提醒类型与去重规则 | 2026-01-23 | 123 |
-| docs/design-write-guard.md | 写入守卫设计 | v5.8.0：skill 路径修复 | 2026-01-28 | 255 |
+| docs/design-write-guard.md | 写入守卫设计 | v5.9.0：分段检查改进 | 2026-01-29 | 285 |
 | docs/design-memory-first-v2.md | Memory-first V2 | 已实现：极简注入 + 职责分离 | 2026-01-28 | 58 |
 | docs/design-writer-delegation.md | 写入流程职责分离 | 主 Agent 只传诉求，Writer 自主判断写入目标 | 2026-01-28 | 72 |
 | requirements/REQ-001-archive.md | 归档需求 | Memory Bank 归档功能需求 | 2026-01-23 | 21 |

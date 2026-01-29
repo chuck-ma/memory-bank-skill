@@ -266,12 +266,40 @@ delegate_task(
 | cd 后操作 | `cd memory-bank && rm file` 无法检测 |
 | Python 等 | 只检测 `python.*open`，其他语言未覆盖 |
 
+#### v5.9.0 分段检查改进
+
+**问题**：
+
+1. 复合命令误判：`git add memory-bank/... && git commit -m "..."` 因为 `&&` 导致 git 放行逻辑被跳过
+2. commit message 误判：尖括号 `<clio-agent@sisyphuslabs.ai>` 被误认为重定向符号
+
+**修复方案**：
+
+| 改进 | 之前 | 之后 |
+|------|------|------|
+| 命令分割 | 整条命令检测，遇到 `&&`/`\|` 等直接跳过 git 放行 | 用 `splitShellSegments()` 分割，每段独立检查 |
+| 重定向检测 | 任何 `>` 都触发 | 只检测重定向目标是 `memory-bank` 的情况 |
+
+**技术细节**：
+
+- 删除 `hasShellOperators` 全局判断
+- 新增 `splitShellSegments(command: string): string[]` 函数，按 `&&`/`||`/`;`/`|` 分割（忽略引号内）
+- 重定向正则改为 `/(?:\d{0,2}|&)?>{1,2}\s*['"]?memory-bank(?:[\/\\]|$)/`
+
+**效果对比**：
+
+| 命令 | 之前 | 之后 |
+|------|------|------|
+| `git add memory-bank/... && git commit -m "...<email>"` | ❌ 被拦截 | ✅ 放行 |
+| `git diff memory-bank/ \| less` | ❌ 被拦截 | ✅ 放行 |
+| `echo foo > memory-bank/test.md` | ❌ 被拦截 | ❌ 被拦截 |
+
 ### 已覆盖的 Bash 写入操作
 
 | 类别 | 检测模式 |
 |------|---------|
-| 重定向 | `>`, `>>`, `<<` |
-| 管道写入 | `\|` (因为可接 tee) |
+| 重定向 | `>`, `>>` 到 `memory-bank/` 目标 |
+| 管道写入 | `\|` 到 `tee memory-bank/` |
 | 文件操作 | `cp`, `mv`, `rm`, `mkdir`, `touch`, `tee` |
 | 编辑器 | `sed -i`, `perl -i/-p` |
 
@@ -307,6 +335,7 @@ delegate_task(
 
 | 日期 | 变更 |
 |------|------|
+| 2026-01-29 | v5.9.0: 分段检查改进，修复复合命令误判 + 精确重定向检测 |
 | 2026-01-28 | 初始设计：简单拦截 + 警告 |
 | 2026-01-28 | 重构：独立 Writer Agent + Session 白名单 |
 | 2026-01-28 | 实现完成：Write/Edit 拦截 + Bash 启发式 + Late registration |
