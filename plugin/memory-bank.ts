@@ -1018,16 +1018,11 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         if (toolName === "apply_patch" || toolName === "patch") {
           const patchText = args.patchText ?? args.patch ?? args.diff
           if (typeof patchText === "string") {
-            // Git diff format: +++ b/path or --- a/path
-            const gitDiffPattern = /^(?:\+\+\+|---)\s+[ab]\/(.+)$/gm
-            let match
-            while ((match = gitDiffPattern.exec(patchText)) !== null) {
-              if (match[1]) paths.push(match[1])
+            for (const m of patchText.matchAll(/^(?:\+\+\+|---)\s+[ab]\/(.+)$/gm)) {
+              if (m[1]) paths.push(m[1])
             }
-            // OpenCode format: *** Add File: path, *** Update File: path, *** Delete File: path
-            const openCodePattern = /^\*\*\*\s+(?:Add|Update|Delete|Move to)\s+(?:File:\s*)?(.+)$/gm
-            while ((match = openCodePattern.exec(patchText)) !== null) {
-              if (match[1]) paths.push(match[1].trim())
+            for (const m of patchText.matchAll(/^\*\*\*\s+(?:Add|Update|Delete|Move to)\s+(?:File:\s*)?(.+)$/gm)) {
+              if (m[1]) paths.push(m[1].trim())
             }
           }
         }
@@ -1063,59 +1058,76 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
       }
 
-      // === Check Bash tool for write operations ===
+      // === Bash tool write detection (v5.9.0: segment-aware) ===
       if (tool.toLowerCase() === "bash") {
         const command = output.args?.command
         if (!command || typeof command !== "string") return
         
-        // Check if command targets memory-bank/ directory (not files like memory-bank.ts)
-        // Pattern: match "memory-bank" only when followed by / or \ (directory) or end/space/quote
-        // NOT when followed by . or _ or - (filename continuation like memory-bank.ts)
-        const cmdToCheck = isCaseInsensitiveFS ? command.toLowerCase() : command
+        // Split by shell operators (&&, ||, ;, |) respecting quotes
+        const splitShellSegments = (cmd: string): string[] => {
+          const parts: string[] = []
+          let buf = ""
+          let quote: "'" | '"' | "`" | null = null
+          let escaped = false
+
+          for (let i = 0; i < cmd.length; i++) {
+            const ch = cmd[i]
+
+            if (escaped) { buf += ch; escaped = false; continue }
+            if ((quote === '"' || quote === "`") && ch === "\\") { buf += ch; escaped = true; continue }
+            if (quote) { buf += ch; if (ch === quote) quote = null; continue }
+            if (ch === "'" || ch === '"' || ch === "`") { quote = ch; buf += ch; continue }
+
+            if (ch === ";" || ch === "|") {
+              if (buf.trim()) parts.push(buf.trim())
+              buf = ""
+              if (ch === "|" && cmd[i + 1] === "|") i++
+              continue
+            }
+            if (ch === "&" && cmd[i + 1] === "&") {
+              if (buf.trim()) parts.push(buf.trim())
+              buf = ""
+              i++
+              continue
+            }
+            buf += ch
+          }
+          if (buf.trim()) parts.push(buf.trim())
+          return parts
+        }
+
         const mbPattern = isCaseInsensitiveFS 
           ? /(?:^|[^a-z0-9_.-])memory-bank(?:[\/\\]|$|\s|['"])/
           : /(?:^|[^A-Za-z0-9_.-])memory-bank(?:[\/\\]|$|\s|['"])/
-        if (!mbPattern.test(cmdToCheck)) return
 
-        // Shell control operators that indicate compound commands
-        const hasShellOperators = /[;&|]|\$\(|`/.test(command)
-
-        // Read-only commands allowlist - ONLY for simple commands without operators
-        if (!hasShellOperators) {
-          const readOnlyPatterns = [
-            /^\s*(ls|cat|head|tail|less|more|grep|rg|ag|find|tree|wc|file|stat)\b/i,
-            /^\s*git\b/i,
-          ]
-          if (readOnlyPatterns.some(p => p.test(command))) return
-        }
-
-        // Write operation patterns (redirects, known writers)
-        const writePatterns = [
-          /(?:^|[^2])>/, // stdout redirect (but not 2> stderr alone)
-          />>/, // append redirect
-          /<</, // heredoc
-          /\|/, // pipe (can be used with tee, etc.)
-          /\btee\b/i,
-          /\bsed\s+-i/i,
-          /\bperl\s+-[ip]/i,
-          /\bcp\b/i,
-          /\bmv\b/i,
-          /\brm\b/i,
-          /\bmkdir\b/i,
-          /\btouch\b/i,
-
-          /\bpython\b.*\bopen\b/i,
+        const readOnlyPatterns = [
+          /^\s*(ls|cat|head|tail|less|more|grep|rg|ag|find|tree|wc|file|stat)\b/i,
+          /^\s*git\b/i,
         ]
 
-        const isWriteOperation = writePatterns.some(p => p.test(command))
-        if (!isWriteOperation) return
+        // Redirect only triggers when target is memory-bank (fixes email <email> false positive)
+        const redirectToMb = isCaseInsensitiveFS
+          ? /(?:\d{0,2}|&)?>{1,2}\s*['"]?memory-bank(?:[\/\\]|$)/i
+          : /(?:\d{0,2}|&)?>{1,2}\s*['"]?memory-bank(?:[\/\\]|$)/
 
-        if (isWriterAllowed(sessionID)) {
-          log.debug("Writer agent bash write allowed", { sessionID, command: command.slice(0, 100) })
+        const writePatterns = [
+          redirectToMb, /\btee\b/i, /\bsed\s+-i\b/i, /\bperl\s+-[ip]\b/i,
+          /\bcp\b/i, /\bmv\b/i, /\brm\b/i, /\bmkdir\b/i, /\btouch\b/i, /\bpython\b.*\bopen\b/i,
+        ]
+
+        for (const segment of splitShellSegments(command)) {
+          const segToCheck = isCaseInsensitiveFS ? segment.toLowerCase() : segment
+          if (!mbPattern.test(segToCheck)) continue
+          if (readOnlyPatterns.some(p => p.test(segment))) continue
+          if (!writePatterns.some(p => p.test(segment))) continue
+
+          if (isWriterAllowed(sessionID)) {
+            log.debug("Writer agent bash write allowed", { sessionID, command: command.slice(0, 100) })
+            return
+          }
+          blockWrite("bash write operation", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
           return
         }
-
-        blockWrite("bash write operation", { command: command.slice(0, 200) })
       }
     },
   }
