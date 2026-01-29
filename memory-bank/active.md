@@ -1,11 +1,11 @@
 # Active Context
 
 <!-- MACHINE_BLOCK_START -->
-> 更新于: 2026-01-28
+> 更新于: 2026-01-29
 
 ## 当前焦点
 
-- 完成 writer skill 合并，已发布 v5.13.0
+- v5.17.0 - patterns.md 主动触发 + 引用方式改进
 
 ## 下一步
 
@@ -36,6 +36,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-01-29 | 发布 5.17.0：patterns.md 主动触发规则 + SKILL.md 描述性引用 |
 | 2026-01-28 | 发布 5.13.0：合并 writer skill 到 references/ |
 | 2026-01-28 | 决定合并 writer skill 到 references/，简化结构 |
 | 2026-01-28 | 发布 5.9.0：Memory-first V2（极简注入 + 职责分离） |
