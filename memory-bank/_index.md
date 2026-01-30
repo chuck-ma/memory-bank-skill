@@ -4,7 +4,7 @@
 |------|-------|---------|---------|------|
 | brief.md | 项目概述 | OpenCode 插件，项目记忆系统 | 2026-01-27 | 32 |
 | tech.md | 技术栈 | TypeScript + Bun + OpenCode Plugin API | 2026-01-23 | 55 |
-| active.md | 当前焦点 | 完成 writer skill 合并，发布 v5.13.0 | 2026-01-28 | 52 |
+| active.md | 当前焦点 | v5.18.0 Writer 调用方式迁移 | 2026-01-30 | 55 |
 | patterns.md | 技术决策与约定 | Skill 结构、patterns 触发规则、SKILL.md 引用格式 | 2026-01-29 | 51 |
 | docs/testing-locally.md | 本地测试指南 | 如何在本项目测试插件而不影响全局配置 | 2026-01-27 | 62 |
 | docs/design-organize.md | 整理记忆设计 | AI 自动分析文件分类，给出迁移和新建目录建议 | 2026-01-27 | 138 |

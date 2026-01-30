@@ -5,7 +5,7 @@
 
 ## 当前焦点
 
-- v5.17.0 - patterns.md 主动触发 + 引用方式改进
+- v5.18.0 - Writer 调用方式迁移（delegate_task → Task tool）
 
 ## 下一步
 
@@ -36,6 +36,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-01-30 | 发布 5.18.0：Writer 调用方式从 delegate_task 改为 Task tool（subagent_type 方式） |
 | 2026-01-29 | 发布 5.17.0：patterns.md 主动触发规则 + SKILL.md 描述性引用 |
 | 2026-01-28 | 发布 5.13.0：合并 writer skill 到 references/ |
 | 2026-01-28 | 决定合并 writer skill 到 references/，简化结构 |

@@ -92,7 +92,7 @@ memory-bank/
 流程：
 1. 主 Agent 输出更新计划（诉求 + 要点）
 2. 用户确认
-3. `delegate_task(subagent_type="memory-bank-writer", load_skills=["memory-bank"], prompt="诉求：...")`
+3. 调用 Task tool：`Task(description="更新 Memory Bank", prompt="诉求：...", subagent_type="memory-bank-writer")`
 
 详见 [writer.md](references/writer.md)
 

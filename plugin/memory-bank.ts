@@ -986,9 +986,9 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         log.warn("Memory Bank write blocked", { sessionID, tool, reason, ...context })
         throw new Error(
           `[Memory Bank Guard] 写入 memory-bank/ 受限。\n` +
-          `请使用 delegate_task 调用 memory-bank-writer agent 来更新 Memory Bank。\n` +
+          `请使用 Task tool 调用 memory-bank-writer agent 来更新 Memory Bank。\n` +
           `注意：只描述诉求，具体写入目标由 Writer 自主判断。\n` +
-          `示例: delegate_task(subagent_type="memory-bank-writer", load_skills=["memory-bank-writer"], prompt="诉求：记录 XXX 设计变更\\n背景：...\\n要点：1. ...")`
+          `示例: Task(description="更新 Memory Bank", prompt="诉求：记录 XXX 设计变更\\n背景：...\\n要点：1. ...", subagent_type="memory-bank-writer")`
         )
       }
       
