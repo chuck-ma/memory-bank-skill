@@ -374,6 +374,50 @@ async function installPluginToConfig(
   }
 }
 
+async function installCommands(
+  undoStack: UndoAction[],
+  manifestFiles: { path: string; sha256: string }[]
+): Promise<InstallResult> {
+  const commandsDir = join(homedir(), ".config", "opencode", "commands")
+  const commandPath = join(commandsDir, "memory-bank-refresh.md")
+  
+  const commandContent = `---
+description: 初始化、迁移或刷新 Memory Bank
+agent: memory-bank-writer
+---
+
+执行 Memory Bank 的 refresh 流程：
+
+## 检测当前结构
+
+1. 检查 \`memory-bank/\` 目录是否存在
+2. 检查是新结构（MEMORY.md）还是旧结构（_index.md, brief.md, active.md）
+
+## 根据检测结果执行
+
+- **不存在 memory-bank/**：执行初始化流程
+- **存在 MEMORY.md**：执行刷新流程
+- **存在旧结构**：执行迁移流程
+
+## 流程详情
+
+详见 \`~/.config/opencode/skills/memory-bank/references/writer.md\` 的 Refresh 流程章节。
+
+**重要**：执行前输出操作计划，等待用户确认后再执行。
+`
+
+  await ensureDir(commandsDir)
+  const existed = await exists(commandPath)
+  await atomicWriteFile(commandPath, commandContent, undoStack)
+  manifestFiles.push({ path: commandPath, sha256: sha256(commandContent) })
+
+  return {
+    step: "Installing slash commands",
+    status: existed ? "updated" : "created",
+    details: commandPath,
+  }
+}
+
 async function writeManifest(
   manifestFiles: { path: string; sha256: string }[],
   undoStack: UndoAction[]
@@ -490,15 +534,20 @@ async function install(customModel?: string): Promise<void> {
       log("")
     }
     
-    logStep(1, 2, "Installing skill files...")
+    logStep(1, 3, "Installing skill files...")
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles)
     logDetail(r1.details || "")
     results.push(r1)
 
-    logStep(2, 2, "Configuring plugin...")
-    const r2 = await installPluginToConfig(undoStack, customModel)
+    logStep(2, 3, "Installing slash commands...")
+    const r2 = await installCommands(undoStack, manifestFiles)
     logDetail(r2.details || "")
     results.push(r2)
+
+    logStep(3, 3, "Configuring plugin...")
+    const r3 = await installPluginToConfig(undoStack, customModel)
+    logDetail(r3.details || "")
+    results.push(r3)
 
     await writeManifest(manifestFiles, undoStack)
     await cleanupBackups(undoStack)
@@ -536,6 +585,17 @@ async function doctor(): Promise<void> {
   } else {
     log(`${colors.red}✗${colors.reset} Skill files`)
     logDetail(`Missing: ${skillPath}`)
+    allOk = false
+  }
+
+  const commandPath = join(homedir(), ".config", "opencode", "commands", "memory-bank-refresh.md")
+  const commandOk = await exists(commandPath)
+  if (commandOk) {
+    log(`${colors.green}✓${colors.reset} Slash command`)
+    logDetail(commandPath)
+  } else {
+    log(`${colors.red}✗${colors.reset} Slash command`)
+    logDetail(`Missing: ${commandPath}`)
     allOk = false
   }
 
