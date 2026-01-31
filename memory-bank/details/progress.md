@@ -20,6 +20,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-01-31 | 发布 6.0.2：Bash 守卫路径匹配改进（预筛 + path.resolve 精确判断），修复 `skills/memory-bank/` 误判 |
 | 2026-01-30 | 发布 5.18.0：Writer 调用方式从 delegate_task 改为 Task tool（subagent_type 方式） |
 | 2026-01-29 | 发布 5.17.0：patterns.md 主动触发规则 + SKILL.md 描述性引用 |
 | 2026-01-28 | 发布 5.13.0：合并 writer skill 到 references/ |
