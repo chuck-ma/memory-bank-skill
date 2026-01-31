@@ -2,26 +2,40 @@
 
 > 此文档定义 Memory Bank 的读取规则。
 
+## 调用方式
+
+使用 `proxy_task`（Task tool）同步调用 memory-reader：
+
+```typescript
+proxy_task({
+  subagent_type: "memory-reader",
+  description: "Memory Bank context read",
+  prompt: "Goal: Load minimum repo context needed for the user request.\nConstraints:\n- Read memory-bank/MEMORY.md first.\n- Then read relevant files under memory-bank/details/ as needed.\n- Do NOT read secrets (.env, *.pem, *.key).\n- Max 10 files total.\nOutput: ONE YAML block with selected_files, evidence, conflicts, context_pack.\n\nUser request:\n{user_question}"
+})
+```
+
 ## 触发规则
 
-**如果 Plugin 已注入 Protocol**（检测 `protocol_version: memory-bank/v1`）：
-- 按 Protocol 的 trigger/skip/invoke 规则执行
+**如果 oh-my-opencode keyTrigger 已注入**：
+- keyTrigger 会在 Phase 0 自动触发 Reader
 - 本文档作为完整规范参考
 
-**如果 Protocol 不存在（Fallback）**：
-- 当用户问题涉及项目上下文时，启动 memory-reader 并行任务
+**如果 keyTrigger 不存在（Fallback）**：
+- 当用户问题涉及项目上下文时，手动调用 memory-reader
 - 触发条件见下方表格
 
-### Fallback 触发条件
+### 触发条件
 
 | 触发 | 场景 |
 |------|------|
 | ✅ | 用户问题涉及项目具体背景（技术栈、架构、历史决策） |
 | ✅ | 用户问"为什么这样做"、"之前怎么处理的" |
 | ✅ | 用户工作在特定模块，可能有已记录的模式 |
+| ✅ | 即将做非平凡修改，需要仓库约定/约束 |
 | ❌ | 简单追问（"继续"、"好的"） |
 | ❌ | 通用编程问题（与项目无关） |
-| ❌ | 用户明确说"不需要上下文" |
+| ❌ | 用户明确说"不需要上下文"或"skip memory-bank" |
+| ❌ | 问题是关于 Memory Bank 本身 |
 
 ---
 

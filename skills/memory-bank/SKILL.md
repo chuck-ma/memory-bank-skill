@@ -89,23 +89,23 @@ Plugin 自动注入 `memory-bank/MEMORY.md` 内容到 system prompt。
 3. 根据 MEMORY.md 的 **Routing Rules** 按需读取 details/
 4. **渐进读取**：默认 1-3 个详情文件，信息不足再追加
 
-#### memory-reader 并行任务（推荐）
+#### memory-reader 同步子任务
 
-当用户问题涉及项目上下文时，启动后台任务获取结构化上下文包：
+当用户问题涉及项目上下文时，同步调用 memory-reader 获取结构化上下文包：
 
 ```typescript
-delegate_task(
-  subagent_type="memory-reader",
-  run_in_background=true,
-  load_skills=[],
-  prompt="用户问题：{question}\n\n请根据路由规则读取相关 details/，返回结构化上下文包。"
-)
+proxy_task({
+  subagent_type: "memory-reader",
+  description: "Memory Bank context read",
+  prompt: "Goal: Load minimum repo context needed.\nConstraints: Read memory-bank/MEMORY.md first, then details/ as needed. No secrets. Max 10 files.\nOutput: ONE YAML block with selected_files, evidence, conflicts, context_pack.\n\nUser request: {question}"
+})
 ```
 
 **触发条件**：
 - ✅ 涉及项目具体背景（技术栈、架构、历史决策）
 - ✅ 涉及"为什么这样做"、"之前怎么处理的"
 - ❌ 简单追问、通用编程问题
+- ❌ 关于 Memory Bank 本身的问题
 
 **冲突检测**：memory-reader 发现记忆与实现冲突时，会报告给主 Agent，建议调用 Writer 更新。
 
@@ -115,10 +115,10 @@ delegate_task(
 
 **核心约束**：主 Agent **禁止直接写入** `memory-bank/`，必须 delegate 给 `memory-bank-writer`。
 
-流程：
-1. 主 Agent 输出更新计划（诉求 + 要点）
-2. 用户确认
-3. 调用 Task tool：`Task(description="更新 Memory Bank", prompt="诉求：...", subagent_type="memory-bank-writer")`
+流程（跨 turn）：
+1. 主 Agent 检测到写入时机，输出 **Memory Bank Write Proposal**（Target + Reason + Draft）
+2. 用户确认（`mb:write`）或跳过（`mb:no`）
+3. 下一 turn 调用：`proxy_task({ subagent_type: "memory-bank-writer", description: "Memory Bank write", prompt: "Target: ...\nDraft: ..." })`
 
 详见 [writer.md](references/writer.md)
 

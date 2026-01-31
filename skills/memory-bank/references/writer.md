@@ -2,6 +2,58 @@
 
 > 此文档定义 Memory Bank 的写入规则，由 Writer Agent 执行。
 
+## 调用方式
+
+使用 `proxy_task`（Task tool）同步调用 memory-bank-writer：
+
+```typescript
+proxy_task({
+  subagent_type: "memory-bank-writer",
+  description: "Memory Bank write (confirmed)",
+  prompt: "You are updating Memory Bank.\nConstraints:\n- Edit ONLY the target file.\n- Keep changes minimal and consistent with existing format.\n- Do NOT invent facts.\nInput:\nTarget: {target_file}\nDraft:\n1) {bullet_1}\n2) {bullet_2}\nOutput: Show what file changed + brief preview of changes."
+})
+```
+
+## Writer 自动触发流程（跨 turn）
+
+### 触发时机
+
+| 触发 | 场景 |
+|------|------|
+| ✅ | 新需求/范围/验收标准明确 |
+| ✅ | 新技术决策/模式/约定确定或变更 |
+| ✅ | 新经验/踩坑发现（bug 原因、集成陷阱、性能问题） |
+| ✅ | 新/变更的命令、工作流、项目结构 |
+| ❌ | 问题是关于 Memory Bank 本身 |
+| ❌ | 本消息已包含 Proposal |
+| ❌ | 用户已拒绝（mb:no） |
+| ❌ | 用户消息是 mb:write 或 mb:no（直接执行/跳过） |
+| ❌ | 上一条消息有 Proposal 且用户未回应 |
+
+### 流程
+
+**Step 1: 提议（本 turn）**
+
+在完成主要任务后，追加 Proposal：
+
+```
+Memory Bank Write Proposal
+- Target: `memory-bank/details/patterns.md` | `memory-bank/details/requirements/REQ-xxx.md` | `memory-bank/details/learnings/xxx.md` | `memory-bank/details/progress.md`
+- Reason: <1 short sentence>
+- Draft:
+  1) <concrete bullet>
+  2) <concrete bullet>
+- Confirm: Reply `mb:write` to apply, or `mb:no` to skip.
+```
+
+**Step 2: 确认（用户 turn）**
+
+用户回复 `mb:write` 或 `确认/写入` 表示确认，`mb:no` 或 `不要写/skip` 表示跳过。
+
+**Step 3: 执行（下一 turn）**
+
+收到确认后，调用 memory-bank-writer 执行写入，然后展示变更预览。
+
 ## Refresh 流程（/memory-bank-refresh）
 
 通过 `/memory-bank-refresh` 触发，执行初始化、迁移或刷新。
@@ -152,29 +204,27 @@
 
 ---
 
-## 职责分离
+## 职责分离（Auto-Trigger 模式）
 
-**重要**：主 Agent 只说诉求，Writer 自主判断写入目标。
+**Proposal 流程**：主 Agent 提供 Target + Draft，用户确认后 Writer 执行。
 
 | 步骤 | 负责方 | 动作 |
 |------|--------|------|
-| 1 | 主 Agent | 输出更新计划（诉求 + 要点） |
-| 2 | 主 Agent | 跟用户确认 |
-| 3 | 用户 | 确认或拒绝 |
-| 4 | 主 Agent | delegate 给 Writer |
-| 5 | **Writer** | **自主判断写入目标** → 执行写入 |
+| 1 | 主 Agent | 检测写入时机，输出 Proposal（含 Target + Draft） |
+| 2 | 用户 | `mb:write` 确认 或 `mb:no` 拒绝 |
+| 3 | 主 Agent | 调用 `proxy_task({ subagent_type: "memory-bank-writer", ... })` |
+| 4 | **Writer** | 执行写入（可顺带更新 index.md / MEMORY.md） |
 
-### 主 Agent 的 prompt 格式
+### 主 Agent 的 prompt 格式（调用 Writer 时）
 
 ```
-诉求：{语义意图}
-背景：{简要上下文}
-要点：
-1. {要点1}
-2. {要点2}
+Target: memory-bank/details/patterns.md
+Draft:
+1) {bullet 1}
+2) {bullet 2}
 ```
 
-**禁止**：主 Agent 在 prompt 中指定文件路径。
+**说明**：Auto-Trigger 模式下，主 Agent 在 Proposal 中明确指定 Target 文件，用户确认后 Writer 按指定目标执行。
 
 ---
 

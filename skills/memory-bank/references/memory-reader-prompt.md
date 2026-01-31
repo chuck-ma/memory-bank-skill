@@ -113,17 +113,14 @@ If Memory Bank is comprehensive: `open_questions: []`
 主 Agent 通过以下方式调用：
 
 ```typescript
-delegate_task(
-  subagent_type="memory-reader",
-  run_in_background=true,
-  load_skills=[],
-  prompt=`
-用户问题：{user_question}
+proxy_task({
+  subagent_type: "memory-reader",
+  description: "Memory Bank context read",
+  prompt: `用户问题：{user_question}
 
 MEMORY.md 已在系统上下文中。请根据路由规则读取相关 details/，返回结构化上下文包。
-如果 MEMORY.md 被截断（TRUNCATED），优先读取 details/ 索引文件。
-`
-)
+如果 MEMORY.md 被截断（TRUNCATED），优先读取 details/ 索引文件。`
+})
 ```
 
 ## 触发条件
