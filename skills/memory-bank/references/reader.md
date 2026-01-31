@@ -2,15 +2,97 @@
 
 > 此文档定义 Memory Bank 的读取规则。
 
-## Memory Gate（强制）
+## 触发规则
 
-**MEMORY.md 已由 Plugin 自动注入 system prompt**，无需手动读取。
+**如果 Plugin 已注入 Protocol**（检测 `protocol_version: memory-bank/v1`）：
+- 按 Protocol 的 trigger/skip/invoke 规则执行
+- 本文档作为完整规范参考
 
-如果需要更详细的信息，根据 MEMORY.md 的 **Routing Rules** 按需读取 `details/` 下的文件。
+**如果 Protocol 不存在（Fallback）**：
+- 当用户问题涉及项目上下文时，启动 memory-reader 并行任务
+- 触发条件见下方表格
+
+### Fallback 触发条件
+
+| 触发 | 场景 |
+|------|------|
+| ✅ | 用户问题涉及项目具体背景（技术栈、架构、历史决策） |
+| ✅ | 用户问"为什么这样做"、"之前怎么处理的" |
+| ✅ | 用户工作在特定模块，可能有已记录的模式 |
+| ❌ | 简单追问（"继续"、"好的"） |
+| ❌ | 通用编程问题（与项目无关） |
+| ❌ | 用户明确说"不需要上下文" |
 
 ---
 
-## 读取流程
+## 消费契约
+
+memory-reader 返回四层结构，主 Agent 应按以下方式消费：
+
+### 1. Context Summary（直接使用）
+
+```yaml
+project: "..."
+current_focus: "..."
+key_tech_stack: ["...", "..."]
+key_constraints: ["...", "..."]
+```
+
+**用法**：直接作为项目背景，无需验证。
+
+### 2. Evidence（可信凭证）
+
+```yaml
+evidence:
+  - claim_id: C1
+    claim: "项目使用 Bun 运行时"
+    path: "memory-bank/details/tech.md"
+    mtime: "2026-01-31T00:00:00+08:00"
+    quote: "Runtime: Bun 1.2.x"
+```
+
+**用法**：
+- 主 Agent 可引用 `claim_id` 作为决策依据
+- 若需验证，直接读取 `path` 检查 `quote`
+- `mtime` 用于判断信息新鲜度
+
+### 3. Conflicts Detected（冲突报告）
+
+```yaml
+conflicts:
+  - type: stale | inconsistent | ambiguous
+    severity: high | medium | low
+    description: "patterns.md 说用 Redux，代码用 Zustand"
+    memory_path: "memory-bank/details/patterns.md"
+    memory_says: "状态管理：Redux"
+    source_path: "src/store.ts"
+    source_shows: "import { create } from 'zustand'"
+    trust_source: "source code"
+    minimal_fix: "更新 patterns.md 的状态管理描述"
+```
+
+**用法**：
+- `severity: high` → 优先处理，可能影响决策
+- `trust_source` → 当前行为应参考的权威来源
+- `minimal_fix` → 建议调用 memory-bank-writer 更新
+
+### 4. Open Questions（信息缺口）
+
+```yaml
+open_questions:
+  - question: "认证流程未记录"
+    suggested_path: "src/auth/login.ts"
+```
+
+**用法**：
+- 主 Agent 若需要此信息，应直接读取 `suggested_path`
+- 避免基于缺失信息做假设
+
+---
+
+## 直接读取流程（备选）
+
+如果不使用 memory-reader，可直接读取：
 
 ```
 1. MEMORY.md 内容已注入（包含 Project Snapshot + Current Focus + Routing Rules）
@@ -27,55 +109,13 @@
 
 ---
 
-## 路由优先级
-
-路由规则按**书写顺序**优先（第一条命中优先）。
-
-- **作者责任**：把更具体的规则写在更前面
-- **入口优先**：MEMORY.md 的路由优先于二级 index.md 的路由
-
----
-
-## Memory-first 原则
-
-**任何问题，先假设"可能已经记录过"**。
-
-| 问题类型 | 查找位置 |
-|---------|---------|
-| 当前在做什么/下一步 | MEMORY.md → Current Focus |
-| 项目是什么/概述 | MEMORY.md → Project Snapshot |
-| 怎么跑/怎么测试 | details/tech.md |
-| 设计决策/架构 | details/design/index.md → 具体文件 |
-| 需求背景/功能定义 | details/requirements/index.md → 具体文件 |
-| 遇到过这问题吗 | details/learnings/index.md → 具体文件 |
-
-**搜索顺序**：MEMORY.md 路由 → details/ 二级索引 → 具体文件 → 代码
-
----
-
-## 二级索引读取
-
-当路由指向目录（如 `details/design/`）时：
-
-1. 先读取 `details/design/index.md`（二级路由）
-2. 根据 index.md 的路由规则选择具体文件
-3. 读取匹配的具体文件
-
-**Fallback**：如果 `index.md` 不存在，直接列出目录下的文件，读取最相关的 1-2 个。建议运行 `/memory-bank-refresh` 重建索引。
-
----
-
 ## 冲突处理
 
-当 MEMORY.md 与 details/ 内容不一致时：
-
-- **以 details/ 为准**（更详细、更新）
-- 建议更新 MEMORY.md 的相关摘要
-
-当文档与代码不一致时：
-
-- **以代码为准**
-- 建议通过 Writer 更新文档
+| 冲突类型 | 处理规则 |
+|---------|---------|
+| MEMORY.md vs details/ | 以 details/ 为准（更详细） |
+| 文档 vs 代码 | 以代码为准，建议更新文档 |
+| 两个 details/ 互相矛盾 | 以 mtime 更新的为准，报告冲突 |
 
 ---
 

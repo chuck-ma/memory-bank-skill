@@ -5,6 +5,20 @@ description: 项目记忆系统 - 自动读取上下文、自动沉淀发现、�
 
 # Memory Bank Skill
 
+## 优先级与去重
+
+运行时若已注入 `Memory Bank Protocol`（在 system prompt 中检测 `protocol_version: memory-bank/v1`），**以 Protocol 为准**：
+
+| 情况 | 行为 |
+|------|------|
+| Protocol 存在 | 按 Protocol 的 trigger/skip/invoke 规则执行 |
+| Skill 与 Protocol 不一致 | 视为漂移，优先遵循 Protocol |
+| Protocol 不存在 | 按 Skill 的 fallback 规则执行（见 [reader.md](references/reader.md)） |
+
+**原则**：Plugin 提供最小行为闭环，Skill 提供完整规范和 fallback。
+
+---
+
 ## 命令
 
 ### /memory-bank-refresh
@@ -71,9 +85,29 @@ Plugin 自动注入 `memory-bank/MEMORY.md` 内容到 system prompt。
 ### 读取阶段
 
 1. **MEMORY.md 已由 Plugin 注入**，无需手动读取
-2. 根据 MEMORY.md 的 **Routing Rules** 按需读取 details/
-3. **渐进读取**：默认 1-3 个详情文件，信息不足再追加
-4. **路由顺序 = 优先级**：第一条匹配的规则优先
+2. 当用户问题涉及项目背景时，启动 **memory-reader** 并行任务
+3. 根据 MEMORY.md 的 **Routing Rules** 按需读取 details/
+4. **渐进读取**：默认 1-3 个详情文件，信息不足再追加
+
+#### memory-reader 并行任务（推荐）
+
+当用户问题涉及项目上下文时，启动后台任务获取结构化上下文包：
+
+```typescript
+delegate_task(
+  subagent_type="memory-reader",
+  run_in_background=true,
+  load_skills=[],
+  prompt="用户问题：{question}\n\n请根据路由规则读取相关 details/，返回结构化上下文包。"
+)
+```
+
+**触发条件**：
+- ✅ 涉及项目具体背景（技术栈、架构、历史决策）
+- ✅ 涉及"为什么这样做"、"之前怎么处理的"
+- ❌ 简单追问、通用编程问题
+
+**冲突检测**：memory-reader 发现记忆与实现冲突时，会报告给主 Agent，建议调用 Writer 更新。
 
 详见 [reader.md](references/reader.md)
 
