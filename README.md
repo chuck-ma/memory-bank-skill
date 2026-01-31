@@ -180,5 +180,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 6.0.0
-- **主要更新**: v6.0.0 单入口架构（MEMORY.md + details/）
+- **版本**: 6.1.0
+- **主要更新**: v6.1.0 统一 Task Tool 架构（同步执行 + Writer 自动触发）
