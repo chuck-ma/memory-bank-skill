@@ -345,20 +345,62 @@ async function installPluginToConfig(
   }
   
   const defaultModel = "cliproxy/claude-opus-4-5-20251101"
-  const writerAgent = {
+  const installedBy = `memory-bank-skill@${VERSION}`
+  
+  const writerDefaults = {
     description: "Memory Bank 专用写入代理",
     model: customModel || defaultModel,
-    tools: {
-      write: true,
-      edit: true,
-      bash: true
-    }
+    tools: { write: true, edit: true, bash: true },
+    "x-installed-by": installedBy
   }
   
-  const existingWriter = config.agent["memory-bank-writer"]
-  if (!existingWriter || JSON.stringify(existingWriter) !== JSON.stringify(writerAgent)) {
-    config.agent["memory-bank-writer"] = writerAgent
-    changes.push(existingWriter ? "Updated agent: memory-bank-writer" : "Added agent: memory-bank-writer")
+  const readerDefaults = {
+    description: "Memory Bank 并行读取代理，返回结构化上下文包",
+    model: customModel || defaultModel,
+    tools: { read: true, glob: true, grep: true },
+    "x-installed-by": installedBy
+  }
+  
+  const mergeAgent = (existing: any, defaults: any, name: string): boolean => {
+    if (!existing) {
+      config.agent[name] = defaults
+      changes.push(`Added agent: ${name}`)
+      return true
+    }
+    
+    let agentModified = false
+    for (const key of Object.keys(defaults)) {
+      if (key === "model" || key === "tools") continue
+      if (!(key in existing)) {
+        existing[key] = defaults[key]
+        agentModified = true
+      }
+    }
+    
+    if (!existing.tools) {
+      existing.tools = defaults.tools
+      agentModified = true
+    } else {
+      for (const tool of Object.keys(defaults.tools)) {
+        if (!(tool in existing.tools)) {
+          existing.tools[tool] = defaults.tools[tool]
+          agentModified = true
+        }
+      }
+    }
+    
+    if (agentModified) {
+      existing["x-installed-by"] = installedBy
+      changes.push(`Updated agent: ${name} (filled missing fields)`)
+    }
+    return agentModified
+  }
+  
+  if (mergeAgent(config.agent["memory-bank-writer"], writerDefaults, "memory-bank-writer")) {
+    modified = true
+  }
+  
+  if (mergeAgent(config.agent["memory-reader"], readerDefaults, "memory-reader")) {
     modified = true
   }
 
