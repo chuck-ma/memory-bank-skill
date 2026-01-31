@@ -34,6 +34,8 @@ OpenCode 插件，为 AI 编码助手提供项目记忆系统。通过结构化 
 
 | 决策 | 日期 | 要点 |
 |------|------|------|
+| Skill 与 Plugin 分层互补 | 2026-01-31 | Plugin 提供最小行为闭环，Skill 提供完整规范和 fallback |
+| memory-reader 并行子任务 | 2026-01-31 | 解决 AI 不信任摘要问题，后台读取+Evidence 证据链 |
 | 合并 writer skill 到 references/ | 2026-01-28 | 避免两个独立 skill 的 manifest 同步问题 |
 | patterns.md 主动触发规则 | 2026-01-29 | 技术选型/新模块/架构决策时主动读取 |
 | SKILL.md 描述性引用格式 | 2026-01-29 | 用自然语言说明"何时该读"，而非纯表格链接 |

@@ -49,6 +49,74 @@
 - 需要了解**写入规则**时，见 [writer.md](references/writer.md)
 ```
 
+## memory-reader 并行子任务设计
+
+| 决策 | 日期 | 原因 |
+|------|------|------|
+| 引入 memory-reader agent 并行读取上下文 | 2026-01-31 | 解决"AI 不信任摘要，仍去读源码验证"的问题 |
+
+**核心问题**：
+- 当前 Plugin 将 MEMORY.md 注入 system prompt
+- 但 AI 不信任摘要，仍然去读源码验证
+- Memory Bank 的价值没有充分发挥
+
+**解决方案**：
+- 使用 `delegate_task(subagent_type="memory-reader", run_in_background=true)` 启动
+- 并行读取：MEMORY.md → 按路由规则读 details/ → 抽样关键源码
+- 返回"可直接使用的上下文包"
+
+**memory-reader 输出格式（三层结构）**：
+1. **Context Summary**：项目目标、当前焦点、关键技术栈、关键约定（给主任务直接用）
+2. **Evidence**：来源文件 + 原文摘录 + mtime（让主任务放心）
+3. **Open Questions**：Memory Bank 未覆盖的信息 + 建议查找路径（防止瞎编）
+
+**触发条件**：
+- ❌ 不是首条消息就触发
+- ✅ 当内容涉及项目具体背景时触发
+- ✅ 当 Memory Bank 有相关存储时触发
+- ❌ 简单追问、闲聊不触发
+
+**冲突检测功能**：
+- memory-reader 发现记忆与实现冲突时，主动告知主 Agent
+- 建议调用 Memory Bank Writer 更新记忆
+
+**Plugin 注入内容变化**：
+- 从"注入大段上下文"改为"注入行为规则"
+- 规则：收到相关消息 → 启动 memory-reader（后台）→ 继续工作 → 需要决策时获取结果
+
+**工作量估算**：
+- 可用原型：1-4 小时
+- 完善版本：1-2 天
+
+## Skill 与 Plugin 分层互补
+
+| 决策 | 日期 | 原因 |
+|------|------|------|
+| Skill 与 Plugin 分层互补架构 | 2026-01-31 | 避免 Skill 与 Plugin 内容重复，同时保证 fallback 可用 |
+
+**设计原则**：
+- **Plugin**：注入 ~10 行 "Memory Bank Protocol"，包含 trigger/skip/invoke/output/conflict 规则
+- **Skill**：提供完整规范、fallback 规则、消费契约
+
+**优先级规则**：
+- 检测 `protocol_version: memory-bank/v1` 判断 Protocol 是否存在
+- Protocol 存在 → 按 Protocol 执行
+- Protocol 不存在 → 按 Skill fallback 执行
+- Skill 与 Protocol 不一致 → 视为漂移，优先遵循 Protocol
+
+**文档分工**：
+| 文档 | 职责 |
+|------|------|
+| Plugin Protocol | 最小行为闭环（~10 行） |
+| SKILL.md | 优先级规则 + 命令 + 目录结构 |
+| reader.md | Fallback 触发条件 + 消费契约 |
+| memory-reader-prompt.md | Agent 系统提示词 + 输出格式 |
+
+**Oracle 建议（待实现）**：
+- 添加 YAML schema 防止输出格式漂移
+- 定义 drift 检测与处理机制
+- 使用 allowlist + denylist 双重安全
+
 <!-- MACHINE_BLOCK_END -->
 
 <!-- USER_BLOCK_START -->
