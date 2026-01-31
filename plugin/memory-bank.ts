@@ -33,6 +33,7 @@ const SENTINEL_CLOSE = "</memory-bank>"
 
 const SERVICE_NAME = "memory-bank"
 const PLUGIN_PROMPT_VARIANT = "memory-bank-plugin"
+const OMO_KEY_TRIGGER_MARKER = "Memory Bank Key Trigger"
 
 // ============================================================================
 // Types
@@ -187,6 +188,40 @@ function createLogger(client: PluginClient) {
 }
 
 // ============================================================================
+// Oh-My-OpenCode Detection
+// ============================================================================
+
+const OMO_CACHE_TTL_MS = 60_000
+let omoKeyTriggerCache: { value: boolean; expiry: number } | null = null
+
+async function checkOmoKeyTriggerInjected(projectRoot: string): Promise<boolean> {
+  const now = Date.now()
+  if (omoKeyTriggerCache && now < omoKeyTriggerCache.expiry) {
+    return omoKeyTriggerCache.value
+  }
+  
+  const paths = [
+    path.join(projectRoot, ".opencode", "oh-my-opencode.json"),
+    path.join(process.env.HOME || "", ".config", "opencode", "oh-my-opencode.json"),
+  ]
+  
+  for (const configPath of paths) {
+    try {
+      const content = await readFile(configPath, "utf8")
+      if (content.includes(OMO_KEY_TRIGGER_MARKER)) {
+        omoKeyTriggerCache = { value: true, expiry: now + OMO_CACHE_TTL_MS }
+        return true
+      }
+    } catch {
+      continue
+    }
+  }
+  
+  omoKeyTriggerCache = { value: false, expiry: now + OMO_CACHE_TTL_MS }
+  return false
+}
+
+// ============================================================================
 // Loader Functions
 // ============================================================================
 
@@ -240,18 +275,36 @@ async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<Memo
       contentHash = createHash("sha1").update(entryContent).digest("hex").slice(0, 8)
     } catch { }
     
-    const behaviorProtocol = `
+    const hasOmoKeyTrigger = await checkOmoKeyTriggerInjected(projectRoot)
+    
+    let behaviorProtocol: string
+    if (hasOmoKeyTrigger) {
+      behaviorProtocol = `
+## Memory Bank Protocol
+protocol_version: memory-bank/v1
+fingerprint: MEMORY.md | ${totalChars.toLocaleString()} chars | mtime ${mtimeISO} | hash ${contentHash}${truncated ? " | TRUNCATED" : ""}
+trigger: (handled by Sisyphus keyTrigger)
+skip: 通用问题 / 简单追问 / 用户说"不需要上下文"
+invoke: proxy_task(subagent_type="memory-reader", prompt="用户问题:{q}\\n按路由读details/,输出YAML")
+output: 单个 YAML 块，含 evidence + conflicts；禁读 .env/*secret*/*.pem/*.key；最多 10 文件
+conflict: 发现冲突 → 报告用户并等待确认，确认后再调用 write
+write: proxy_task(subagent_type="memory-bank-writer", prompt="Target:...\\nDraft:...")；禁止直接写 memory-bank/
+more: 完整规范见 /memory-bank skill
+`
+    } else {
+      behaviorProtocol = `
 ## Memory Bank Protocol
 protocol_version: memory-bank/v1
 fingerprint: MEMORY.md | ${totalChars.toLocaleString()} chars | mtime ${mtimeISO} | hash ${contentHash}${truncated ? " | TRUNCATED" : ""}
 trigger: 涉及项目背景 / 问"为什么这样做" / 特定模块实现
 skip: 通用问题 / 简单追问 / 用户说"不需要上下文"
-invoke: delegate_task(subagent_type="memory-reader", run_in_background=true, prompt="用户问题:{q}\\n按路由读details/,输出YAML")
+invoke: proxy_task(subagent_type="memory-reader", prompt="用户问题:{q}\\n按路由读details/,输出YAML")
 output: 单个 YAML 块，含 evidence + conflicts；禁读 .env/*secret*/*.pem/*.key；最多 10 文件
 conflict: 发现冲突 → 报告用户并等待确认，确认后再调用 write
-write: Task(subagent_type="memory-bank-writer", prompt="诉求:...\\n要点:...")；禁止直接写 memory-bank/
+write: proxy_task(subagent_type="memory-bank-writer", prompt="Target:...\\nDraft:...")；禁止直接写 memory-bank/
 more: 完整规范见 /memory-bank skill
 `
+    }
     
     const text =
       `${SENTINEL_OPEN}\n` +
@@ -1035,9 +1088,8 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         log.warn("Memory Bank write blocked", { sessionID, tool, reason, ...context })
         throw new Error(
           `[Memory Bank Guard] 写入 memory-bank/ 受限。\n` +
-          `请使用 Task tool 调用 memory-bank-writer agent 来更新 Memory Bank。\n` +
-          `注意：只描述诉求，具体写入目标由 Writer 自主判断。\n` +
-          `示例: Task(description="更新 Memory Bank", prompt="诉求：记录 XXX 设计变更\\n背景：...\\n要点：1. ...", subagent_type="memory-bank-writer")`
+          `请使用 proxy_task 调用 memory-bank-writer agent 来更新 Memory Bank。\n` +
+          `示例: proxy_task({ subagent_type: "memory-bank-writer", description: "Memory Bank write", prompt: "Target: memory-bank/details/patterns.md\\nDraft:\\n1) ..." })`
         )
       }
       
