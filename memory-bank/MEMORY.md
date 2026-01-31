@@ -17,14 +17,14 @@ OpenCode 插件，为 AI 编码助手提供项目记忆系统。通过结构化 
 
 > 更新于: 2026-01-31
 
-**当前焦点**：v6.0.0 单入口重构 - 实现阶段
+**当前焦点**：v6.1.0 统一 Task Tool 架构 - 设计完成
 
 **下一步**：
-- [ ] 实现 Plugin 注入
-- [ ] 实现 /memory-bank-refresh
-- [ ] 重写 reader.md
-- [ ] 更新 writer.md
-- [ ] Oracle double check
+- [ ] 实现 Plugin keyTrigger（Reader/Writer 检测）
+- [ ] 实现 /memory-bank-refresh 命令
+- [ ] 更新 reader.md（同步 Task 调用）
+- [ ] 更新 writer.md（自动触发 + Proposal 流程）
+- [x] v6.1.0 架构决策记录
 
 **阻塞项**：无
 
@@ -34,6 +34,8 @@ OpenCode 插件，为 AI 编码助手提供项目记忆系统。通过结构化 
 
 | 决策 | 日期 | 要点 |
 |------|------|------|
+| v6.1.0 统一 Task Tool 架构 | 2026-01-31 | Reader/Writer 全部同步 Task，掌控感 > 后台；Writer 自动触发 + Proposal 确认流程 |
+| oh-my-opencode keyTrigger 集成 | 2026-01-31 | prompt_append + Oracle 改进（Step 0 措辞、精确递归保护、双 orchestrator、60s TTL），production-ready |
 | Skill 与 Plugin 分层互补 | 2026-01-31 | Plugin 提供最小行为闭环，Skill 提供完整规范和 fallback |
 | memory-reader 并行子任务 | 2026-01-31 | 解决 AI 不信任摘要问题，后台读取+Evidence 证据链 |
 | 合并 writer skill 到 references/ | 2026-01-28 | 避免两个独立 skill 的 manifest 同步问题 |
