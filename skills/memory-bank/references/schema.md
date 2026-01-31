@@ -10,11 +10,11 @@
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "action": "select_files",
   "files": [
-    "requirements/REQ-003-payment.md",
-    "learnings/bugs/2024-01-20-payment-timeout.md"
+    "details/requirements/REQ-003-payment.md",
+    "details/learnings/2024-01-20-payment-timeout.md"
   ],
   "reason": "用户讨论支付超时，加载相关需求和历史 bug 经验",
   "budget": {
@@ -26,7 +26,7 @@
   "riskAlerts": [
     {
       "level": "warning",
-      "file": "learnings/bugs/2024-01-20-payment-timeout.md",
+      "file": "details/learnings/2024-01-20-payment-timeout.md",
       "message": "历史上支付模块有超时问题，建议查看"
     }
   ]
@@ -58,24 +58,25 @@
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "action": "memory_ops",
   "operations": [
     {
       "type": "create",
-      "path": "requirements/REQ-004-refund.md",
+      "path": "details/requirements/REQ-004-refund.md",
       "reason": "用户确认新增退款功能需求"
     },
     {
       "type": "update",
-      "path": "active.md",
+      "path": "MEMORY.md",
       "block": "MACHINE_BLOCK",
+      "section": "Current Focus",
       "changes": "更新当前焦点为退款功能"
     },
     {
       "type": "update",
-      "path": "_index.md",
-      "changes": "添加 REQ-004 索引条目"
+      "path": "details/requirements/index.md",
+      "changes": "添加 REQ-004 路由条目"
     }
   ],
   "requiresConfirmation": true
@@ -104,9 +105,9 @@
 
 ```
 [Memory Bank 更新计划]
-- 创建: requirements/REQ-004-refund.md（退款功能需求）
-- 更新: active.md（更新当前焦点）
-- 更新: _index.md（添加新文件索引）
+- 创建: details/requirements/REQ-004-refund.md（退款功能需求）
+- 更新: MEMORY.md（更新 Current Focus）
+- 更新: details/requirements/index.md（添加路由条目）
 
 是否执行？[Y/n]
 ```

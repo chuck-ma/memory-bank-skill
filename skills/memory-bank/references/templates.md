@@ -4,49 +4,58 @@
 
 ---
 
-## _index.md（根索引）
+## MEMORY.md（单入口）
 
 ```markdown
-# Memory Bank 索引
+# Memory Bank
 
-> 自动维护，可手工编辑 summary 以提升检索精度
-
-| path | title | summary | updated | size |
-|------|-------|---------|---------|------|
-```
-
----
-
-## brief.md
-
-```markdown
-# Project Brief
+> 项目记忆系统单入口。包含项目概览、当前焦点及详细文档路由。
 
 <!-- MACHINE_BLOCK_START -->
-## 一句话描述
-{项目是什么}
+## Project Snapshot
+- **一句话描述**: {项目是什么}
+- **核心目标**: {目标 1}
+- **关键约束**: {约束 1}
+- **技术栈**: {语言/框架}
 
-## 核心目标
-- {目标 1}
-- {目标 2}
+## Current Focus
+- **正在做什么**: {正在做什么}
+- **下一步**:
+  - [ ] {next 1}
+- **阻塞项**: {blocker，无则写「无」}
 
-## 边界
-- 包含: {范围内}
-- 不包含: {范围外}
+## Routing Rules
+> 引导 AI 寻找详细文档。
 
-## 关键约束
-- {约束 1}
+| 路径 | 标题 | 摘要 | 更新日期 |
+|------|------|------|----------|
+| details/tech.md | Tech Stack | 技术栈、命令与环境要求 | YYYY-MM-DD |
+| details/patterns.md | Patterns | 技术决策与代码约定 | YYYY-MM-DD |
+| details/progress.md | Progress | 功能完成状态与已知问题 | YYYY-MM-DD |
 <!-- MACHINE_BLOCK_END -->
 
 <!-- USER_BLOCK_START -->
-## 补充说明
+## 用户笔记
 {用户自由编辑区}
 <!-- USER_BLOCK_END -->
 ```
 
 ---
 
-## tech.md
+## details/index.md（二级路由）
+
+```markdown
+# {目录名} 索引
+
+> 自动维护，用于引导 AI 检索此目录下的详细文档。
+
+| 路径 | 标题 | 摘要 | 状态/类型 | 更新日期 |
+|------|------|------|-----------|----------|
+```
+
+---
+
+## details/tech.md
 
 ```markdown
 # Tech Stack
@@ -82,41 +91,7 @@
 
 ---
 
-## active.md
-
-```markdown
-# Active Context
-
-<!-- MACHINE_BLOCK_START -->
-> 更新于: {YYYY-MM-DD HH:mm}
-
-## 当前焦点
-{正在做什么}
-
-## 下一步
-- [ ] {next 1}
-- [ ] {next 2}
-
-## 已完成（待归档）
-- [x] {done item}
-
-## 阻塞项
-- {blocker，无则写「无」}
-
-## 最近变更
-| 日期 | 变更 |
-|------|------|
-<!-- MACHINE_BLOCK_END -->
-
-<!-- USER_BLOCK_START -->
-## 用户笔记
-{用户自由编辑区}
-<!-- USER_BLOCK_END -->
-```
-
----
-
-## progress.md
+## details/progress.md
 
 ```markdown
 # Progress
@@ -144,10 +119,10 @@
 
 ---
 
-## archive/active_YYYY-MM.md
+## details/archive/*.md
 
 ```markdown
-# Active Archive - {YYYY-MM}
+# Archive - {YYYY-MM}
 
 <!-- MACHINE_BLOCK_START -->
 > 归档于: {YYYY-MM-DD}
@@ -168,7 +143,7 @@
 
 ---
 
-## patterns.md
+## details/patterns.md
 
 ```markdown
 # Patterns & Decisions
@@ -190,7 +165,7 @@
 
 ---
 
-## requirements/REQ-{ID}-{slug}.md
+## details/requirements/REQ-{ID}-{slug}.md
 
 ```markdown
 # REQ-{ID}: {标题}
@@ -220,9 +195,9 @@
 
 ---
 
-以下 docs 模板与 `templates/docs/` 保持一致，更新时需同步。
+以下设计文档模板位于 `details/design/` 目录下。
 
-## docs/architecture.md
+## details/design/architecture.md
 
 ```markdown
 # Architecture
@@ -261,7 +236,7 @@
 
 ---
 
-## docs/modules/{module}.md
+## details/design/modules/{module}.md
 
 ```markdown
 # {Module} 模块
@@ -302,7 +277,7 @@ src/{path}/
 
 ---
 
-## docs/specs/{spec}.md
+## details/design/specs/{spec}.md
 
 ```markdown
 # {Spec Name}
@@ -356,7 +331,7 @@ interface {Model} {
 
 ---
 
-## docs/design-{slug}.md
+## details/design/design-{slug}.md
 
 ```markdown
 # 设计文档: {标题}
@@ -391,7 +366,7 @@ interface {Model} {
 
 ---
 
-## learnings/{type}/{date}-{slug}.md
+## details/learnings/{type}/{date}-{slug}.md
 
 ```markdown
 # {标题}
