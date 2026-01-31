@@ -187,18 +187,18 @@ async function atomicWriteFile(
 <!-- memory-bank-skill:begin -->
 ## Memory Bank（项目记忆系统）
 
-每次会话开始时，检查 `memory-bank/` 目录：
+每次会话开始时，Plugin 自动注入 `memory-bank/MEMORY.md` 内容：
 
-1. **存在** → 读取 `memory-bank/brief.md` + `memory-bank/active.md` + `memory-bank/_index.md` 获取项目上下文
-2. **不存在** → 首次工作时扫描项目结构（README.md、pyproject.toml 等），创建 `memory-bank/` 并生成 `brief.md` + `tech.md`
+1. **存在 MEMORY.md** → 直接注入内容，AI 根据 Routing Rules 按需读取 details/
+2. **存在旧结构** → 提示运行 `/memory-bank-refresh` 迁移
+3. **不存在** → 可选运行 `/memory-bank-refresh` 初始化
 
-工作过程中，检测到以下事件时按 `/skill memory-bank` 规则写入：
-- **新需求**：创建 `requirements/REQ-xxx.md`
-- **技术决策**：追加到 `patterns.md`
-- **经验教训**（bug/性能/集成踩坑）：创建 `learnings/xxx.md`
-- **归档**（active.md 超出阈值）：创建 `archive/active_YYYY-MM.md`
+工作过程中，检测到以下事件时按 `/memory-bank` 规则写入：
+- **新需求**：创建 `details/requirements/REQ-xxx.md`
+- **技术决策**：追加到 `details/patterns.md`
+- **经验教训**（bug/性能/集成踩坑）：创建 `details/learnings/xxx.md`
 
-写入前输出计划，等待用户确认。详细规则见 `~/.config/opencode/skill/memory-bank/SKILL.md`。
+写入前输出计划，等待用户确认。详细规则见 `~/.config/opencode/skills/memory-bank/SKILL.md`。
 <!-- memory-bank-skill:end -->
 ```
 
