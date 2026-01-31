@@ -61,9 +61,9 @@ bunx memory-bank-skill doctor
 
 | 场景 | AI 行为 |
 |------|---------|
-| **已有代码库** | 扫描 package.json/README 等，自动生成 brief.md + tech.md |
+| **已有代码库** | 扫描 package.json/README 等，自动生成 MEMORY.md + details/tech.md |
 | **新项目** | 不创建任何文件，等你开始工作后按需创建 |
-| **已有 Memory Bank** | 直接读取 brief.md + active.md + _index.md，恢复上下文 |
+| **已有 Memory Bank** | 直接读取 MEMORY.md，恢复上下文 |
 
 ---
 
@@ -71,29 +71,16 @@ bunx memory-bank-skill doctor
 
 ```
 memory-bank/
-├── _index.md                # 索引文件（AI 用于智能检索）
-├── brief.md                 # 项目概述（稳定）
-├── tech.md                  # 技术栈 + 环境 + 命令
-├── active.md                # 当前焦点 + 下一步 + 阻塞项
-├── progress.md              # 完成状态
-├── patterns.md              # 技术决策 + 代码约定
+├── MEMORY.md              # 单入口文件（项目概览 + 当前焦点 + 路由规则）
 │
-├── requirements/            # 需求池
-│   └── REQ-{ID}-{slug}.md
-│
-├── docs/                    # 技术文档
-│   ├── architecture.md
-│   ├── design-*.md
-│   ├── modules/
-│   └── specs/
-│
-├── learnings/               # 经验沉淀
-│   ├── bugs/
-│   ├── performance/
-│   └── integrations/
-│
-└── archive/                 # 归档文件（按月）
-    └── active_YYYY-MM.md
+└── details/               # 详情层（按需读取）
+    ├── tech.md            # 技术栈 + 环境 + 命令
+    ├── patterns.md        # 技术决策 + 代码约定
+    ├── progress.md        # 完成状态
+    ├── design/            # 设计文档（含 index.md）
+    ├── requirements/      # 需求池（含 index.md）
+    ├── learnings/         # 经验沉淀（含 index.md）
+    └── archive/           # 归档文件
 ```
 
 ---
@@ -105,9 +92,10 @@ Memory Bank 包含一个 OpenCode 插件，提供两个核心功能：
 ### 1. 自动读取
 
 每次 LLM 调用前，自动将 Memory Bank 内容注入 system prompt：
-- 读取 `brief.md` + `active.md` + `_index.md`
+- 读取 `MEMORY.md`
 - 文件缓存 + mtime 检测，只有变更才重新读取
 - 12,000 字符上限，超出自动截断
+
 
 ### 2. 自动提醒更新（当前禁用）
 
@@ -192,5 +180,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 5.15.0
-- **主要更新**: Writer 自动清理（目录文件数检查 + active.md 归档）+ 确认职责分离
+- **版本**: 6.0.0
+- **主要更新**: v6.0.0 单入口架构（MEMORY.md + details/）
