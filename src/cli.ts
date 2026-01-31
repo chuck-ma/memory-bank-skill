@@ -483,6 +483,180 @@ async function writeManifest(
 }
 
 // ============================================================================
+// Oh-My-OpenCode Integration
+// ============================================================================
+
+const MEMORY_BANK_KEY_TRIGGER_MARKER = "Memory Bank Key Triggers"
+
+const MEMORY_BANK_KEY_TRIGGER = `
+### ${MEMORY_BANK_KEY_TRIGGER_MARKER} (SYNC Task Tool)
+
+These triggers use proxy_task (the Task tool) for synchronous subagent execution.
+
+---
+
+AMENDMENT A — Phase 0: Memory Bank Reader (Context Read)
+
+Step R0 Timing:
+- BEFORE solving user's request, if project context is needed, run memory-reader FIRST.
+
+Step R1 Trigger (any):
+- User asks about repo architecture, decisions, conventions, current focus
+- User asks about prior work, existing modules, how something works
+- You are about to make non-trivial changes and need repo-specific constraints
+
+Step R2 Skip:
+- User says "skip memory-bank" or "不需要上下文"
+- Request is about Memory Bank itself (keywords: memory-bank/, memory-reader, memory-bank-writer, /memory-bank, MEMORY.md, details/patterns.md, details/learnings/, details/requirements/)
+- Request is obviously generic and repo context is not needed
+- Most recent memory_reader YAML in conversation has same request content (avoid re-reading)
+
+Step R3 Action (sync):
+\`\`\`
+proxy_task({
+  subagent_type: "memory-reader",
+  description: "Memory Bank context read",
+  prompt: "Goal: Load minimum repo context needed for the user request.\\nConstraints:\\n- Read memory-bank/MEMORY.md first.\\n- Then read relevant files under memory-bank/details/ as needed.\\n- Do NOT read secrets (.env, *.pem, *.key).\\n- Max 10 files total.\\nOutput: ONE YAML block with selected_files, evidence, conflicts, context_pack.\\n\\nUser request:\\n<<<USER_REQUEST>>>"
+})
+\`\`\`
+Replace <<<USER_REQUEST>>> with the user's original message verbatim.
+
+---
+
+AMENDMENT B — Final Step: Memory Bank Writer (Propose -> Confirm -> Execute)
+
+Step W0 Timing:
+- AFTER you finish main task output, RIGHT BEFORE final answer for this turn.
+
+Step W1 Trigger (any):
+- New requirement/scope/acceptance criteria clarified
+- New technical decision/pattern/convention chosen or changed
+- New learning/pitfall discovered (bug cause, integration trap, perf footgun)
+- New/changed commands/workflow/project structure
+
+Step W2 Skip (Loop Guards):
+- Request is about Memory Bank itself (same keywords as R2: memory-bank/, memory-reader, memory-bank-writer, /memory-bank)
+- You already included "Memory Bank Write Proposal" in this assistant message
+- User already declined in this thread (mb:no / 不要写 / skip)
+- User message is mb:write or mb:no (handle via W4 instead)
+- Previous assistant message has Proposal and user hasn't responded yet
+
+Step W3 Propose ONLY (do not write yet):
+Append this template at end of your answer:
+
+\`\`\`
+Memory Bank Write Proposal
+- Target: \`memory-bank/details/patterns.md\` | \`memory-bank/details/requirements/REQ-xxx.md\` | \`memory-bank/details/learnings/xxx.md\` | \`memory-bank/details/progress.md\`
+- Reason: <1 short sentence>
+- Draft:
+  1) <concrete bullet>
+  2) <concrete bullet>
+- Confirm: Reply \`mb:write\` to apply, or \`mb:no\` to skip.
+\`\`\`
+
+Step W4 On confirmation (next turn, user says mb:write or 确认/写入):
+Execute writer synchronously:
+\`\`\`
+proxy_task({
+  subagent_type: "memory-bank-writer",
+  description: "Memory Bank write (confirmed)",
+  prompt: "You are updating Memory Bank.\\nConstraints:\\n- Edit ONLY the target file.\\n- Keep changes minimal and consistent with existing format.\\n- Do NOT invent facts.\\nInput:\\nTarget: <PASTE TARGET>\\nDraft:\\n1) <PASTE>\\n2) <PASTE>\\nOutput: Show what file changed + brief preview of changes."
+})
+\`\`\`
+
+Step W5 After execution:
+- Show which file(s) updated and brief preview.
+- Do NOT emit another Proposal in same message.
+`
+
+interface OmoConfig {
+  agents?: {
+    sisyphus?: {
+      prompt_append?: string
+      [key: string]: unknown
+    }
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+async function findOmoConfigPath(): Promise<string | null> {
+  // Check project-level first, then user-level
+  const projectPath = join(process.cwd(), ".opencode", "oh-my-opencode.json")
+  const userPath = join(homedir(), ".config", "opencode", "oh-my-opencode.json")
+  
+  if (await exists(projectPath)) return projectPath
+  if (await exists(userPath)) return userPath
+  return null
+}
+
+async function injectOmoKeyTrigger(
+  undoStack: UndoAction[]
+): Promise<InstallResult> {
+  const configPath = await findOmoConfigPath()
+  
+  if (!configPath) {
+    return {
+      step: "Oh-My-OpenCode integration",
+      status: "skipped",
+      details: "oh-my-opencode.json not found (not using oh-my-opencode)",
+    }
+  }
+  
+  let config: OmoConfig = {}
+  try {
+    const content = await fs.readFile(configPath, "utf-8")
+    config = JSON.parse(content)
+  } catch (err) {
+    return {
+      step: "Oh-My-OpenCode integration",
+      status: "skipped",
+      details: `Failed to parse ${configPath}: ${err}`,
+    }
+  }
+  
+  if (!config.agents) config.agents = {}
+  
+  const orchestrators = ["sisyphus", "atlas"] as const
+  const injected: string[] = []
+  
+  for (const orchestrator of orchestrators) {
+    const existingAppend = (config.agents as any)[orchestrator]?.prompt_append ?? ""
+    if (existingAppend.includes(MEMORY_BANK_KEY_TRIGGER_MARKER)) {
+      continue
+    }
+    
+    if (!(config.agents as any)[orchestrator]) {
+      (config.agents as any)[orchestrator] = {}
+    }
+    
+    const newAppend = existingAppend 
+      ? existingAppend + "\n" + MEMORY_BANK_KEY_TRIGGER
+      : MEMORY_BANK_KEY_TRIGGER
+    
+    ;(config.agents as any)[orchestrator].prompt_append = newAppend
+    injected.push(orchestrator)
+  }
+  
+  if (injected.length === 0) {
+    return {
+      step: "Oh-My-OpenCode integration",
+      status: "already-configured",
+      details: "keyTrigger already injected to all orchestrators",
+    }
+  }
+  
+  const newContent = JSON.stringify(config, null, 2) + "\n"
+  await atomicWriteFile(configPath, newContent, undoStack)
+  
+  return {
+    step: "Oh-My-OpenCode integration",
+    status: "updated",
+    details: `Injected keyTrigger to ${injected.join(", ")} in ${configPath}`,
+  }
+}
+
+// ============================================================================
 // Cache Management
 // ============================================================================
 
@@ -576,20 +750,25 @@ async function install(customModel?: string): Promise<void> {
       log("")
     }
     
-    logStep(1, 3, "Installing skill files...")
+    logStep(1, 4, "Installing skill files...")
     const r1 = await installSkillFiles(packageRoot, undoStack, manifestFiles)
     logDetail(r1.details || "")
     results.push(r1)
 
-    logStep(2, 3, "Installing slash commands...")
+    logStep(2, 4, "Installing slash commands...")
     const r2 = await installCommands(undoStack, manifestFiles)
     logDetail(r2.details || "")
     results.push(r2)
 
-    logStep(3, 3, "Configuring plugin...")
+    logStep(3, 4, "Configuring plugin...")
     const r3 = await installPluginToConfig(undoStack, customModel)
     logDetail(r3.details || "")
     results.push(r3)
+
+    logStep(4, 4, "Oh-My-OpenCode integration...")
+    const r4 = await injectOmoKeyTrigger(undoStack)
+    logDetail(r4.details || "")
+    results.push(r4)
 
     await writeManifest(manifestFiles, undoStack)
     await cleanupBackups(undoStack)
