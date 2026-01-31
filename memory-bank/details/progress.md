@@ -1,22 +1,10 @@
-# Active Context
+# 完成状态与历史变更
 
-<!-- MACHINE_BLOCK_START -->
-> 更新于: 2026-01-29
+> 更新于: 2026-01-31
 
-## 当前焦点
+## 已完成
 
-- v5.18.0 - Writer 调用方式迁移（delegate_task → Task tool）
-
-## 下一步
-
-- [x] 移动 `memory-bank-writer/SKILL.md` → `memory-bank/references/writer.md`
-- [x] 删除 `memory-bank-writer/` 目录
-- [x] 更新 manifest
-- [ ] 在实际项目中测试写入守卫
-- [ ] 在实际项目中测试"整理记忆"功能
-
-## 已完成（待归档）
-
+- [x] v5.18.0: Writer 调用方式迁移（delegate_task → Task tool）
 - [x] v1: Write/Edit 拦截 + Bash 启发式 + Late registration
 - [x] v2: realpath symlink 解析 + 大小写不敏感 + MultiEdit/apply_patch
 - [x] Oracle double check - PASS (v1 + v2)
@@ -27,10 +15,6 @@
 - [x] Memory-first V2 方案实现（Plugin 极简注入 + Skill 渐进式披露 + 职责分离）
 - [x] Writer 职责分离实现（主 Agent 只说诉求，Writer 自主判断写入目标）
 - [x] 合并 writer skill 到 references/writer.md，发布 v5.13.0
-
-## 阻塞项
-
-- 无
 
 ## 最近变更
 
@@ -46,9 +30,3 @@
 | 2026-01-28 | 发布 5.6.2：CLI 版本号从 package.json 读取 |
 | 2026-01-28 | 实现写入守卫 v1：Write/Edit 拦截 + Bash 启发式 |
 | 2026-01-27 | 修复 OpenCode 缓存版本不一致导致 Bun segfault 问题 |
-<!-- MACHINE_BLOCK_END -->
-
-<!-- USER_BLOCK_START -->
-## 用户笔记
-{用户自由编辑区}
-<!-- USER_BLOCK_END -->
