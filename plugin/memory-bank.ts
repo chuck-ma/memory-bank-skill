@@ -1084,10 +1084,16 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
       }
 
-      // === Bash tool write detection (v5.9.0: segment-aware) ===
+      // === Bash tool write detection (v6.0.2: path-resolution based) ===
+      // Two-stage approach:
+      // 1. Pre-filter: skip if "memory-bank" substring not present (fast path)
+      // 2. Precise check: extract path-like args, resolve to absolute, check with isMemoryBankPath()
       if (tool.toLowerCase() === "bash") {
         const command = output.args?.command
         if (!command || typeof command !== "string") return
+        
+        // Stage 1: Pre-filter - quick substring check
+        if (!command.includes("memory-bank")) return
         
         // Split by shell operators (&&, ||, ;, |) respecting quotes
         const splitShellSegments = (cmd: string): string[] => {
@@ -1121,57 +1127,130 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           if (buf.trim()) parts.push(buf.trim())
           return parts
         }
-
-        const mbPattern = isCaseInsensitiveFS 
-          ? /(?:^|[^a-z0-9_.-])memory-bank(?:[\/\\]|$|\s|['"])/
-          : /(?:^|[^A-Za-z0-9_.-])memory-bank(?:[\/\\]|$|\s|['"])/
+        
+        // Parse shell segment into argv (respects quotes)
+        const parseArgv = (segment: string): string[] => {
+          const args: string[] = []
+          let current = ""
+          let quote: "'" | '"' | null = null
+          let escaped = false
+          
+          for (let i = 0; i < segment.length; i++) {
+            const ch = segment[i]
+            
+            if (escaped) { current += ch; escaped = false; continue }
+            if (quote === '"' && ch === "\\") { escaped = true; continue }
+            if (quote) {
+              if (ch === quote) { quote = null; continue }
+              current += ch
+              continue
+            }
+            if (ch === "'" || ch === '"') { quote = ch; continue }
+            if (ch === " " || ch === "\t") {
+              if (current) { args.push(current); current = "" }
+              continue
+            }
+            current += ch
+          }
+          if (current) args.push(current)
+          return args
+        }
+        
+        // Check if a token looks like a path (not a flag)
+        const looksLikePath = (token: string): boolean => {
+          if (token.startsWith("-")) return false
+          if (token.includes("/") || token.includes("\\")) return true
+          if (token.startsWith("./") || token.startsWith("../")) return true
+          if (token === "memory-bank") return true
+          return false
+        }
+        
+        // Extract path-like arguments from argv
+        const extractPathArgs = (argv: string[]): string[] => {
+          const paths: string[] = []
+          let afterDoubleDash = false
+          
+          for (const arg of argv) {
+            if (arg === "--") { afterDoubleDash = true; continue }
+            if (afterDoubleDash || looksLikePath(arg)) {
+              // Only include if it might reference memory-bank
+              if (arg.includes("memory-bank")) {
+                paths.push(arg)
+              }
+            }
+          }
+          return paths
+        }
 
         const readOnlyPatterns = [
           /^\s*(ls|cat|head|tail|less|more|grep|rg|ag|find|tree|wc|file|stat)\b/i,
-          // Only git commands that are truly read-only (don't modify working tree)
-          /^\s*git\s+(status|log|diff|show|branch|tag|remote|fetch|blame|bisect|reflog|shortlog|describe|rev-parse|rev-list|ls-files|ls-tree|config\s+--get)\b/i,
+          // Git commands - all allowed since we check paths precisely
+          /^\s*git\s+/i,
         ]
 
-        // Redirect only triggers when target is memory-bank (fixes email <email> false positive)
-        const redirectToMb = isCaseInsensitiveFS
-          ? /(?:\d{0,2}|&)?>{1,2}\s*['"]?memory-bank(?:[\/\\]|$)/i
-          : /(?:\d{0,2}|&)?>{1,2}\s*['"]?memory-bank(?:[\/\\]|$)/
+        // Redirect detection - extract target path and check
+        const extractRedirectTarget = (segment: string): string | null => {
+          const match = segment.match(/(?:\d{0,2}|&)?>{1,2}\s*['"]?([^\s'"]+)/)
+          return match?.[1] || null
+        }
 
         for (const segment of splitShellSegments(command)) {
-          const segToCheck = isCaseInsensitiveFS ? segment.toLowerCase() : segment
-          if (!mbPattern.test(segToCheck)) continue
-
-          // Redirect-first: block if redirecting TO memory-bank (e.g., cat foo > memory-bank/x)
-          if (redirectToMb.test(segment)) {
-            if (isWriterAllowed(sessionID)) {
-              log.debug("Writer agent bash redirect allowed", { sessionID, command: command.slice(0, 100) })
+          // Quick check: does this segment mention memory-bank at all?
+          if (!segment.includes("memory-bank")) continue
+          
+          // Check redirect target
+          const redirectTarget = extractRedirectTarget(segment)
+          if (redirectTarget && redirectTarget.includes("memory-bank")) {
+            const resolvedTarget = path.resolve(projectRoot, redirectTarget)
+            if (await isMemoryBankPath(resolvedTarget)) {
+              if (isWriterAllowed(sessionID)) {
+                log.debug("Writer agent bash redirect allowed", { sessionID, command: command.slice(0, 100) })
+                return
+              }
+              blockWrite("bash redirect to memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
               return
             }
-            blockWrite("bash redirect to memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
-            return
           }
 
-          // Allowlist: only genuinely read-only commands pass
+          // Read-only commands: still need to verify paths
           if (readOnlyPatterns.some(p => p.test(segment))) {
             // Special case: find with dangerous flags can modify/write files
             if (/^\s*find\b/i.test(segment) && /-(delete|exec|ok|execdir|okdir|fprint|fprint0|fprintf|fls)\b/i.test(segment)) {
-              if (isWriterAllowed(sessionID)) {
-                log.debug("Writer agent find with dangerous flags allowed", { sessionID })
-                return
+              const argv = parseArgv(segment)
+              const pathArgs = extractPathArgs(argv)
+              for (const pathArg of pathArgs) {
+                const resolved = path.resolve(projectRoot, pathArg)
+                if (await isMemoryBankPath(resolved)) {
+                  if (isWriterAllowed(sessionID)) {
+                    log.debug("Writer agent find with dangerous flags allowed", { sessionID })
+                    return
+                  }
+                  blockWrite("find with dangerous flags on memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
+                  return
+                }
               }
-              blockWrite("find with dangerous flags on memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
-              return
             }
+            // Read-only git/other commands are allowed
             continue
           }
-
-          // Everything else referencing memory-bank is blocked (allowlist model)
-          if (isWriterAllowed(sessionID)) {
-            log.debug("Writer agent bash write allowed", { sessionID, command: command.slice(0, 100) })
-            return
+          
+          // Non-readonly command with memory-bank reference - check if any path is under root memory-bank/
+          const argv = parseArgv(segment)
+          const pathArgs = extractPathArgs(argv)
+          
+          for (const pathArg of pathArgs) {
+            const resolved = path.resolve(projectRoot, pathArg)
+            if (await isMemoryBankPath(resolved)) {
+              if (isWriterAllowed(sessionID)) {
+                log.debug("Writer agent bash write allowed", { sessionID, command: command.slice(0, 100) })
+                return
+              }
+              blockWrite("bash write to memory-bank", { command: command.slice(0, 200), pathArg, resolved })
+              return
+            }
           }
-          blockWrite("bash non-readonly operation on memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
-          return
+          // Path references memory-bank but resolves outside root memory-bank/ - allowed
+          log.debug("Bash command allowed (path not under root memory-bank/)", { segment: segment.slice(0, 100) })
         }
       }
     },
