@@ -4,6 +4,7 @@
 
 | 经验 | 说明 |
 |------|------|
+| [2026-01-31-bash-guard-aggressive-path-match.md](2026-01-31-bash-guard-aggressive-path-match.md) | Bash 守卫路径匹配过于激进：正则改为 path.resolve 精确判断 |
 | [2026-01-28-bun-registry-sync-delay.md](2026-01-28-bun-registry-sync-delay.md) | Bun Registry 同步延迟：刚发布的版本需 `bun pm cache rm` |
 | [2026-01-27-opencode-cache-inconsistency-crash.md](2026-01-27-opencode-cache-inconsistency-crash.md) | OpenCode 缓存版本不一致导致 Bun segfault |
 | [2026-01-15-memory-bank-update-forgotten.md](2026-01-15-memory-bank-update-forgotten.md) | Todo 驱动工作流遗漏 Memory Bank 沉淀 |
