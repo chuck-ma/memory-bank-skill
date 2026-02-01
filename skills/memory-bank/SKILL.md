@@ -116,8 +116,8 @@ proxy_task({
 **核心约束**：主 Agent **禁止直接写入** `memory-bank/`，必须 delegate 给 `memory-bank-writer`。
 
 流程（跨 turn）：
-1. 主 Agent 检测到写入时机，输出 **Memory Bank Write Proposal**（Target + Reason + Draft）
-2. 用户确认（`mb:write`）或跳过（`mb:no`）
+1. 主 Agent 检测到写入时机，用自然语言询问是否写入（含目标文件 + 要点）
+2. 用户自然语言确认（"好"/"写"/"确认"）或跳过（"不用"/"跳过"/继续下一话题）
 3. 下一 turn 调用：`proxy_task({ subagent_type: "memory-bank-writer", description: "Memory Bank write", prompt: "Target: ...\nDraft: ..." })`
 
 详见 [writer.md](references/writer.md)

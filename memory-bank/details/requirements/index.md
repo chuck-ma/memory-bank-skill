@@ -4,3 +4,4 @@
 |------|------|
 | [REQ-001-archive.md](REQ-001-archive.md) | 归档功能需求 |
 | [REQ-002-single-entry-refactor.md](REQ-002-single-entry-refactor.md) | 单入口文件重构：重构为 MEMORY.md 单入口 + 路由规则索引 |
+| [REQ-003-simplify-write-proposal.md](REQ-003-simplify-write-proposal.md) | 简化 Write Proposal 确认流程：中文模板 + 自然语言确认 |
