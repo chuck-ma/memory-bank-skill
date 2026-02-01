@@ -9,7 +9,7 @@
 1. **语言障碍**：模板是英文的，对中文用户不友好
 2. **确认方式复杂**：使用特殊关键词 `mb:write` / `mb:no`，增加认知负担
 
-示例（当前）：
+旧模板（问题示例）：
 ```
 Memory Bank Write Proposal
 - Target: `memory-bank/details/learnings/xxx.md`
@@ -52,15 +52,15 @@ Memory Bank Write Proposal
 
 | 类型 | 触发词 |
 |------|--------|
-| 确认 | 好 / 写 / 确认 / 可以 / 行 / yes / ok / mb:write |
+| 确认 | 好 / 写 / 确认 / 可以 / 行 / yes / ok / sure / mb:write |
 | 拒绝 | 不用 / 不要 / 跳过 / 算了 / no / skip / mb:no |
 | 忽略 | 用户继续下一话题（视为跳过） |
 
 ## 涉及文件
 
+- `src/cli.ts` - AMENDMENT B 源定义（install 时自动注入到用户配置）
 - `skills/memory-bank/references/writer.md` - Proposal 模板定义
 - `skills/memory-bank/SKILL.md` - 流程描述
-- `~/.config/opencode/oh-my-opencode.json` - AMENDMENT B prompt
 
 ## 验收标准
 

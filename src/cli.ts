@@ -487,8 +487,10 @@ async function writeManifest(
 // ============================================================================
 
 const MEMORY_BANK_KEY_TRIGGER_MARKER = "Memory Bank Key Triggers"
+const MEMORY_BANK_KEY_TRIGGER_BEGIN = "<!-- BEGIN_MEMORY_BANK_KEY_TRIGGERS -->"
+const MEMORY_BANK_KEY_TRIGGER_END = "<!-- END_MEMORY_BANK_KEY_TRIGGERS -->"
 
-const MEMORY_BANK_KEY_TRIGGER = `
+const MEMORY_BANK_KEY_TRIGGER = `${MEMORY_BANK_KEY_TRIGGER_BEGIN}
 ### ${MEMORY_BANK_KEY_TRIGGER_MARKER} (SYNC Task Tool)
 
 These triggers use proxy_task (the Task tool) for synchronous subagent execution.
@@ -535,27 +537,35 @@ Step W1 Trigger (any):
 - New/changed commands/workflow/project structure
 
 Step W2 Skip (Loop Guards):
-- Request is about Memory Bank itself (same keywords as R2: memory-bank/, memory-reader, memory-bank-writer, /memory-bank)
-- You already included "Memory Bank Write Proposal" in this assistant message
-- User already declined in this thread (mb:no / 不要写 / skip)
-- User message is mb:write or mb:no (handle via W4 instead)
-- Previous assistant message has Proposal and user hasn't responded yet
+- Request is about Memory Bank itself (same keywords as R2)
+- You already included "💾" or "Memory Bank" write prompt in this assistant message
+- User already declined in this thread (不用/不要/跳过/no/skip/mb:no)
+- User message is a confirmation or rejection (handle via W4 instead)
+- Previous assistant message has write prompt and user hasn't responded yet
 
 Step W3 Propose ONLY (do not write yet):
-Append this template at end of your answer:
+Append this at end of your answer (natural language, Chinese preferred):
 
 \`\`\`
-Memory Bank Write Proposal
-- Target: \`memory-bank/details/patterns.md\` | \`memory-bank/details/requirements/REQ-xxx.md\` | \`memory-bank/details/learnings/xxx.md\` | \`memory-bank/details/progress.md\`
-- Reason: <1 short sentence>
-- Draft:
-  1) <concrete bullet>
-  2) <concrete bullet>
-- Confirm: Reply \`mb:write\` to apply, or \`mb:no\` to skip.
+---
+💾 要把这次的发现写入 Memory Bank 吗？
+   → {target_file}
+   → 内容：{要点1}；{要点2}
+
+回复"好"或"写"即可，不需要可忽略。
+---
 \`\`\`
 
-Step W4 On confirmation (next turn, user says mb:write or 确认/写入):
-Execute writer synchronously:
+Step W4 On confirmation (next turn):
+**Prerequisite**: Only interpret confirmation/rejection if your immediately previous message contained the 💾 write prompt block. Otherwise treat user message as normal conversation.
+
+Confirmation words: 好/写/确认/可以/行/yes/ok/sure/mb:write
+Rejection words: 不用/不要/跳过/算了/no/skip/mb:no
+Ignore: User continues to next topic without addressing the prompt (treat as skip)
+
+**Mixed intent**: If user confirms AND asks another question (e.g., "写吧，顺便问一下..."), execute the write first, then answer their question in the same response.
+
+On confirmation, execute writer synchronously:
 \`\`\`
 proxy_task({
   subagent_type: "memory-bank-writer",
@@ -567,7 +577,7 @@ proxy_task({
 Step W5 After execution:
 - Show which file(s) updated and brief preview.
 - Do NOT emit another Proposal in same message.
-`
+${MEMORY_BANK_KEY_TRIGGER_END}`
 
 interface OmoConfig {
   agents?: {
@@ -622,20 +632,46 @@ async function injectOmoKeyTrigger(
   
   for (const orchestrator of orchestrators) {
     const existingAppend = (config.agents as any)[orchestrator]?.prompt_append ?? ""
-    if (existingAppend.includes(MEMORY_BANK_KEY_TRIGGER_MARKER)) {
-      continue
-    }
     
     if (!(config.agents as any)[orchestrator]) {
       (config.agents as any)[orchestrator] = {}
     }
     
-    const newAppend = existingAppend 
-      ? existingAppend + "\n" + MEMORY_BANK_KEY_TRIGGER
-      : MEMORY_BANK_KEY_TRIGGER
+    let newAppend: string
+    
+    // Check if we have sentineled block (new format)
+    const beginIdx = existingAppend.indexOf(MEMORY_BANK_KEY_TRIGGER_BEGIN)
+    const endIdx = existingAppend.indexOf(MEMORY_BANK_KEY_TRIGGER_END)
+    
+    if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
+      // Replace existing sentineled block
+      const before = existingAppend.slice(0, beginIdx)
+      const after = existingAppend.slice(endIdx + MEMORY_BANK_KEY_TRIGGER_END.length)
+      newAppend = before + MEMORY_BANK_KEY_TRIGGER + after
+      injected.push(`${orchestrator} (upgraded)`)
+    } else if (existingAppend.includes(MEMORY_BANK_KEY_TRIGGER_MARKER)) {
+      // Legacy block without sentinels - find and replace the whole section
+      // Look for "### Memory Bank Key Triggers" and replace to the end of that block
+      const markerIdx = existingAppend.indexOf(`### ${MEMORY_BANK_KEY_TRIGGER_MARKER}`)
+      if (markerIdx !== -1) {
+        // Keep content before the marker, replace with new block
+        const before = existingAppend.slice(0, markerIdx)
+        newAppend = before + MEMORY_BANK_KEY_TRIGGER
+        injected.push(`${orchestrator} (migrated)`)
+      } else {
+        // Marker found but not in expected format, append new block
+        newAppend = existingAppend + "\n" + MEMORY_BANK_KEY_TRIGGER
+        injected.push(orchestrator)
+      }
+    } else {
+      // No existing block, append new
+      newAppend = existingAppend 
+        ? existingAppend + "\n" + MEMORY_BANK_KEY_TRIGGER
+        : MEMORY_BANK_KEY_TRIGGER
+      injected.push(orchestrator)
+    }
     
     ;(config.agents as any)[orchestrator].prompt_append = newAppend
-    injected.push(orchestrator)
   }
   
   if (injected.length === 0) {
