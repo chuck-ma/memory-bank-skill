@@ -16,6 +16,13 @@ import path from "node:path"
 
 const DEBUG = process.env.MEMORY_BANK_DEBUG === "1"
 const DEFAULT_MAX_CHARS = 12_000
+
+// Gating configuration (v7.0)
+// off: only injection and write protection (lightest)
+// warn: default; only warn, don't block
+// block: block high-risk writes if context not read
+type GatingMode = "off" | "warn" | "block"
+const GATING_MODE: GatingMode = (process.env.MEMORY_BANK_GUARD_MODE as GatingMode) || "warn"
 const TRUNCATION_NOTICE =
   "\n\n---\n\n[TRUNCATED] Memory Bank context exceeded size limit. Read files directly for complete content."
 
@@ -72,6 +79,12 @@ interface MemoryBankContextResult {
   truncated: boolean
 }
 
+interface MessageGatingState {
+  readFiles: Set<string>
+  contextSatisfied: boolean
+  warnedThisMessage: boolean
+}
+
 type LogLevel = "debug" | "info" | "warn" | "error"
 type CacheEntry = { mtimeMs: number; text: string }
 
@@ -88,6 +101,8 @@ const WRITER_AGENT_NAME = "memory-bank-writer"
 const sessionsById = new Map<string, { parentID?: string }>()
 const writerSessionIDs = new Set<string>()
 const agentBySessionID = new Map<string, string>()
+
+const messageGatingStates = new Map<string, MessageGatingState>()
 
 // ============================================================================
 // Utilities
@@ -448,6 +463,94 @@ const MEMORY_BANK_PATTERN = /^memory-bank\//
 
 function isDisabled(): boolean {
   return process.env.MEMORY_BANK_DISABLED === "1" || process.env.MEMORY_BANK_DISABLED === "true"
+}
+
+function getMessageGatingState(gatingKey: string): MessageGatingState {
+  let state = messageGatingStates.get(gatingKey)
+  if (!state) {
+    state = { readFiles: new Set(), contextSatisfied: false, warnedThisMessage: false }
+    messageGatingStates.set(gatingKey, state)
+    if (messageGatingStates.size > 100) {
+      const first = messageGatingStates.keys().next().value
+      if (first) messageGatingStates.delete(first)
+    }
+  }
+  return state
+}
+
+function extractWritePaths(toolName: string, args: Record<string, unknown>): string[] {
+  const paths: string[] = []
+  const pathArgs = ["filePath", "path", "filename", "file", "dest", "destination", "target"]
+  
+  for (const arg of pathArgs) {
+    const val = args[arg]
+    if (typeof val === "string" && val.trim()) paths.push(val)
+  }
+  
+  if (toolName === "multiedit" && Array.isArray(args.edits)) {
+    for (const edit of args.edits) {
+      if (typeof edit === "object" && edit !== null) {
+        const e = edit as Record<string, unknown>
+        if (typeof e.path === "string") paths.push(e.path)
+        if (typeof e.filePath === "string") paths.push(e.filePath)
+      }
+    }
+  }
+  
+  if (toolName === "apply_patch" || toolName === "patch") {
+    const patchText = (args.patchText ?? args.patch ?? args.diff) as string | undefined
+    if (typeof patchText === "string") {
+      for (const m of patchText.matchAll(/^(?:\+\+\+|---)\s+[ab]\/(.+)$/gm)) {
+        if (m[1]) paths.push(m[1])
+      }
+      for (const m of patchText.matchAll(/^\*\*\*\s+(?:Add|Update|Delete|Move to)\s+(?:File:\s*)?(.+)$/gm)) {
+        if (m[1]) paths.push(m[1].trim())
+      }
+    }
+  }
+  
+  return [...new Set(paths)]
+}
+
+type RiskLevel = "high" | "medium" | "low"
+
+function assessWriteRisk(toolName: string, args: Record<string, unknown>, projectRoot: string): RiskLevel {
+  const sensitivePatterns = [
+    /^src\/auth\//i, /^src\/security\//i, /\/auth\//i, /\/security\//i,
+    /package\.json$/i, /package-lock\.json$/i, /bun\.lockb$/i, /yarn\.lock$/i, /pnpm-lock\.yaml$/i,
+    /tsconfig\.json$/i, /\.env/i, /docker\//i, /Dockerfile/i, /docker-compose/i,
+    /infra\//i, /k8s\//i, /kubernetes\//i,
+    /\.github\/workflows\//i, /\.gitlab-ci\.yml$/i, /Jenkinsfile$/i,
+    /pyproject\.toml$/i, /requirements\.txt$/i, /go\.mod$/i, /Cargo\.toml$/i, /Gemfile$/i,
+    /\.config\.(js|ts|mjs)$/i, /vite\.config/i, /next\.config/i, /eslint\.config/i,
+    /migrations\//i, /prisma\/schema\.prisma$/i,
+    /nginx\.conf$/i, /oauth/i, /sso/i, /rbac/i,
+  ]
+  
+  if (toolName === "multiedit") return "high"
+  
+  if (toolName === "apply_patch" || toolName === "patch") {
+    const patchText = (args.patchText ?? args.patch ?? args.diff) as string | undefined
+    if (patchText) {
+      const stdFileMatches = patchText.match(/^(?:\+\+\+|---)\s+[ab]\/(.+)$/gm) || []
+      const customFileMatches = patchText.match(/^\*\*\*\s+(?:Add|Update|Delete)\s+File:/gm) || []
+      const totalFiles = stdFileMatches.length / 2 + customFileMatches.length
+      if (totalFiles > 1) return "high"
+    }
+  }
+  
+  const pathArgs = ["filePath", "path", "filename", "file", "dest", "destination", "target"]
+  for (const arg of pathArgs) {
+    const val = args[arg]
+    if (typeof val === "string") {
+      const relativePath = val.startsWith(projectRoot) 
+        ? val.slice(projectRoot.length).replace(/^\//, "").replace(/\\/g, "/")
+        : val.replace(/\\/g, "/")
+      if (sensitivePatterns.some(p => p.test(relativePath))) return "high"
+    }
+  }
+  
+  return "low"
 }
 
 function computeTriggerSignature(state: RootState): string {
@@ -1008,11 +1111,9 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
     "tool.execute.before": async (input, output) => {
       const { tool, sessionID } = input
       
-      // Detect case-insensitive filesystem (macOS, Windows)
       const isCaseInsensitiveFS = process.platform === "darwin" || process.platform === "win32"
       const normalize = (p: string) => isCaseInsensitiveFS ? p.toLowerCase() : p
       
-      // Pre-compute real paths for project root and memory-bank (cached per call)
       let realProjectRoot: string | null = null
       let realMemoryBankDir: string | null = null
       const getRealPaths = async () => {
@@ -1031,7 +1132,6 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         return { realProjectRoot, realMemoryBankDir }
       }
       
-      // Helper: check if path is under memory-bank/ (checks both lexical and physical paths)
       const isMemoryBankPath = async (targetPath: string): Promise<boolean> => {
         const { realProjectRoot: rootReal, realMemoryBankDir: mbReal } = await getRealPaths()
         const absPath = path.isAbsolute(targetPath) ? targetPath : path.resolve(projectRoot, targetPath)
@@ -1064,11 +1164,108 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           }
         }
         
-        // Block if EITHER lexical or physical path is under memory-bank
         return lexicalMatch || physicalMatch
       }
 
-      // Helper: check if writer session is allowed
+      // ========================================================================
+      // v7.0 Gating: Track reads and gate writes
+      // ========================================================================
+      
+      if (GATING_MODE !== "off") {
+        const meta = getSessionMeta(sessionID, projectRoot)
+        const messageKey = meta.lastUserMessageKey || "default"
+        const gatingKey = `${sessionID}::${messageKey}`
+        const gatingState = getMessageGatingState(gatingKey)
+        const toolLower = tool.toLowerCase()
+        
+        const readTools = ["read", "glob", "grep"]
+        if (readTools.includes(toolLower)) {
+          const targetPath = (output.args?.filePath || output.args?.path || output.args?.pattern) as string | undefined
+          if (targetPath && (await isMemoryBankPath(targetPath))) {
+            gatingState.readFiles.add(targetPath)
+            const relativePath = targetPath.replace(projectRoot, "").replace(/^\//, "")
+            if (relativePath.includes("MEMORY.md") || 
+                relativePath.includes("patterns.md") ||
+                relativePath.includes("details/")) {
+              gatingState.contextSatisfied = true
+              log.debug("Gating: context satisfied via read", { sessionID, gatingKey, targetPath })
+            }
+          }
+        }
+        
+        if (toolLower === "proxy_task") {
+          const subagentType = output.args?.subagent_type as string | undefined
+          if (subagentType === "memory-reader") {
+            gatingState.contextSatisfied = true
+            log.debug("Gating: context satisfied via memory-reader", { sessionID, gatingKey })
+          }
+        }
+        
+        const writeTools = ["write", "edit", "multiedit", "apply_patch", "patch"]
+        if (writeTools.includes(toolLower) && !gatingState.contextSatisfied) {
+          const targetPaths = extractWritePaths(toolLower, output.args || {})
+          
+          const isWritingMemoryBank = await Promise.all(targetPaths.map(p => isMemoryBankPath(p)))
+          if (!isWritingMemoryBank.some(Boolean) && targetPaths.length > 0) {
+            const riskLevel = assessWriteRisk(toolLower, output.args || {}, projectRoot)
+            
+            if (riskLevel === "high" && GATING_MODE === "block") {
+              log.warn("Gating: high-risk write blocked (context not read)", { 
+                sessionID, gatingKey, tool, riskLevel, targetPaths 
+              })
+              throw new Error(
+                `[Memory Bank Gating] 检测到高风险写操作，但本轮未读取项目上下文。\n` +
+                `请先执行: read({ filePath: "memory-bank/details/patterns.md" })\n` +
+                `或执行: read({ filePath: "memory-bank/MEMORY.md" })`
+              )
+            } else if (riskLevel === "high") {
+              log.warn("Gating: high-risk write warning (context not read)", { 
+                sessionID, gatingKey, tool, riskLevel, targetPaths 
+              })
+              if (!gatingState.warnedThisMessage) {
+                gatingState.warnedThisMessage = true
+                client.session.prompt({
+                  path: { id: sessionID },
+                  body: {
+                    noReply: true,
+                    variant: PLUGIN_PROMPT_VARIANT,
+                    parts: [{
+                      type: "text",
+                      text: `## [Memory Bank Gating Warning]\n\n检测到高风险写操作，但本轮未读取项目上下文。\n\n建议先执行: \`read({ filePath: "memory-bank/details/patterns.md" })\`\n\n如需跳过检查，用户可回复"跳过上下文"。`
+                    }]
+                  }
+                }).catch(err => log.error("Failed to send gating warning:", String(err)))
+              }
+            }
+          }
+        }
+        
+        if (toolLower === "bash" && !gatingState.contextSatisfied) {
+          const command = (output.args?.command as string) || ""
+          const bashWritePatterns = [
+            /(?<![0-9&])>(?![&>])\s*\S/,
+            /(?<![0-9&])>>\s*\S/,
+            /\|\s*tee\s/,
+            /\bsed\s+(-[^-]*)?-i/,
+            /\bperl\s+(-[^-]*)?-[pi]/,
+          ]
+          const isLikelyWrite = bashWritePatterns.some(p => p.test(command))
+          if (isLikelyWrite) {
+            const riskLevel = assessWriteRisk("bash", { command }, projectRoot)
+            if (riskLevel === "high" && GATING_MODE === "block") {
+              log.warn("Gating: bash write blocked (context not read)", { sessionID, gatingKey, command: command.slice(0, 100) })
+              throw new Error(
+                `[Memory Bank Gating] 检测到 bash 写入操作，但本轮未读取项目上下文。\n` +
+                `请先执行: read({ filePath: "memory-bank/details/patterns.md" })`
+              )
+            } else if (GATING_MODE === "warn" && !gatingState.warnedThisMessage) {
+              gatingState.warnedThisMessage = true
+              log.warn("Gating: bash write warning (context not read)", { sessionID, gatingKey, command: command.slice(0, 100) })
+            }
+          }
+        }
+      }
+
       const isWriterAllowed = (sid: string): boolean => {
         if (writerSessionIDs.has(sid)) return true
         
