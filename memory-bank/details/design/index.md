@@ -13,3 +13,4 @@
 | [design-archive.md](design-archive.md) | 归档功能设计：归档触发条件与流程 |
 | [design-transparency.md](design-transparency.md) | 读写透明设计：读写透明性与提示机制 |
 | [testing-locally.md](testing-locally.md) | 本地测试指南：如何在本项目测试插件 |
+| [design-gating-architecture.md](design-gating-architecture.md) | v7.0 Gating 架构：Plugin Runner + 写前拦截 + Reader 去 subagent |

@@ -202,6 +202,130 @@
 - 剩余风险是 prompt-based enforcement 固有的，不是实现问题
 - 如果 >5% misroute 率，建议考虑代码级改动（提 PR 改 oh-my-opencode）
 
+## v7.0 Gating 架构设计
+
+| 决策 | 日期 | 原因 |
+|------|------|------|
+| Plugin Gating 机制 | 2026-02-01 | 解决"触发逻辑太弱"问题，从 prompt 规则升级为工具层硬约束 |
+| Reader 去 subagent 化 | 2026-02-01 | 主 agent 直接读，Plugin 做 gating 确保读过上下文 |
+| Writer 保留 subagent | 2026-02-01 | 安全边界必须保留，"mb:write 解锁主 agent 写"会打穿权限边界 |
+| 渐进式启用策略 | 2026-02-01 | 默认 warn 不阻断，仅高风险写才 block |
+| 减少 OpenCode 配置耦合 | 2026-02-01 | oh-my-opencode keyTrigger 降级为可选增强 |
+
+### 核心问题
+
+1. **触发逻辑太弱**：依赖 prompt 规则，AI 经常忽略
+2. **太耦合 OpenCode 配置**：需要 oh-my-opencode.json、prompt_append 等
+3. **Reader/Writer 可能冗余**：规范已在 Skill 里
+
+### 三层架构设计
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        Plugin (Runner)                            │
+│  • 注入 MEMORY.md + Read Hints                                    │
+│  • Gating: 写工具前检查是否读过上下文                               │
+│  • 检测写入时机，触发 Proposal 提醒                                │
+│  • 维护 writer session guard                                      │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                          Skill                                    │
+│  • 规范"怎么做"（读什么、写什么、Proposal 格式）                    │
+│  • 主 agent 直接按 Skill 读取 details/（无需 reader subagent）     │
+│  • Proposal → mb:write → 调用 writer                              │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    memory-bank-writer (保留)                      │
+│  • 唯一允许写 memory-bank/ 的 agent                               │
+│  • 特权执行器：工具集可控、行为可控、guard 可控                     │
+│  • 安全边界：主 agent 永久无权写，writer 有 guard 豁免              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Gating 机制详细设计
+
+**核心思想**：在 AI 尝试"写代码"之前，Plugin 检查它是否已经"读过上下文"。
+
+**状态追踪**：
+```typescript
+interface MessageState {
+  readFiles: Set<string>           // 已读取的 memory-bank/ 文件
+  contextSatisfied: boolean        // 是否满足最低上下文要求
+}
+```
+
+**捕获读操作**（tool.execute.before）：
+- 当 AI 调用 read/glob 读取 memory-bank/ 下文件时，记录到 readFiles
+- 如果读了 patterns.md 或 MEMORY.md，标记 contextSatisfied = true
+
+**拦截写操作**（tool.execute.before）：
+- 当 AI 调用 edit/write/apply_patch 时，检查 contextSatisfied
+- 高风险写 + 未读上下文 → throw Error 阻止
+- 低风险写 + 未读上下文 → warn 警告（默认不阻止）
+
+**风险评估函数**：
+```typescript
+function assessRisk(tool, args): "high" | "medium" | "low" {
+  // 多文件写 = 高风险
+  if (tool === "multiedit") return "high"
+  if (tool === "apply_patch" && countPatchFiles(args.patch) > 1) return "high"
+  
+  // 敏感路径 = 高风险
+  const sensitivePatterns = [
+    /^src\/auth\//, /^src\/security\//, /package\.json$/,
+    /tsconfig\.json$/, /docker\//, /infra\//
+  ]
+  if (sensitivePatterns.some(p => p.test(targetPath))) return "high"
+  
+  return "low"
+}
+```
+
+### Reader 去 subagent 化
+
+**之前**：proxy_task({ subagent_type: "memory-reader", ... })
+**之后**：主 agent 直接用 read/glob/grep 按 Skill 规范读取
+
+**理由**：
+- Reader 做的事情（读几个 markdown 文件）很简单
+- Plugin gating 确保"写之前至少读过"，不依赖 subagent
+- 减少 agent 调用开销
+
+### Writer 保留 subagent 的理由（Oracle 强调）
+
+**必须保留的核心原因**：Writer 不是为了"写 Markdown 更方便"，而是**安全边界**。
+
+如果改成"mb:write 后解锁主 agent 写"，需要实现：
+- 解锁窗口的生命周期（多久？只限本 turn？跨 turn？）
+- 解锁的作用域（只允许一个文件？允许哪些工具？）
+- 防绕过（主 agent 解锁后可用任何写工具写任意内容）
+- 防 prompt injection（诱导用户到 mb:write 就等于提权）
+
+**结论**：保留 writer subagent 比实现"细粒度 ACL + 状态机 + 工具沙箱"成本低且更安全。
+
+### 渐进式启用策略
+
+| 模式 | 行为 |
+|------|------|
+| MEMORY_BANK_GUARD_MODE=off | 只做注入与写保护（最轻） |
+| MEMORY_BANK_GUARD_MODE=warn | 默认档；仅提醒，不拦截 |
+| MEMORY_BANK_GUARD_MODE=block | 仅对高风险写拦截 |
+
+**启用条件**：memory-bank/ 目录不存在时不启用 gating。
+
+### Oracle 讨论关键结论
+
+1. **"中控 Runner"应放在 Plugin 内**，不需要另一个 Agent 或 MCP
+2. **触发可靠性的核心**：从 prompt 规则升级为工具层 gating
+3. **极简替代方案（预注入 details + mb:write 解锁）的致命问题**：
+   - 预注入会造成 token/注意力污染
+   - mb:write 解锁会打穿安全边界
+4. **一句话总结**："在任何写工具执行前，如果本轮没读过 memory-reader 且写入风险高，则阻止写入并给出唯一下一步"
+
 <!-- MACHINE_BLOCK_END -->
 
 <!-- USER_BLOCK_START -->
