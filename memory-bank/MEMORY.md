@@ -15,16 +15,15 @@ OpenCode 插件，为 AI 编码助手提供项目记忆系统。通过结构化 
 
 ## Current Focus
 
-> 更新于: 2026-02-01
+> 更新于: 2026-02-02
 
-**当前焦点**：v7.0 Gating 架构设计完成
+**当前焦点**：v7.1 Index-First + Direct-First 架构设计完成
 
 **下一步**：
-- [ ] 实现 Plugin Gating 机制（tool.execute.before 拦截）
-- [ ] Reader 去 subagent 化（主 agent 直接读）
-- [ ] 添加 MEMORY_BANK_GUARD_MODE 配置
+- [ ] 重写 MEMORY.md 为新模板结构（Routing Rules 意图驱动 + Drill-Down Protocol + Top Quick Answers）
+- [ ] 更新 Plugin Protocol 文案（direct-first + gating 门槛改 patterns.md）
 - [ ] 更新 Skill 规范（reader.md/writer.md）
-- [x] v7.0 架构决策记录
+- [x] v7.1 架构决策记录
 
 **阻塞项**：无
 
@@ -34,6 +33,7 @@ OpenCode 插件，为 AI 编码助手提供项目记忆系统。通过结构化 
 
 | 决策 | 日期 | 要点 |
 |------|------|------|
+| v7.1 Index-First + Direct-First | 2026-02-02 | 意图驱动路由 + 两层读取协议 + Reader 去强依赖；来自 wechat_context 启示 |
 | v7.0 Gating 架构 | 2026-02-01 | Plugin Runner + 写前拦截 + Reader 去 subagent；Writer 保留（安全边界）；渐进式启用 |
 | v6.1.0 统一 Task Tool 架构 | 2026-01-31 | Reader/Writer 全部同步 Task，掌控感 > 后台；Writer 自动触发 + Proposal 确认流程 |
 | oh-my-opencode keyTrigger 集成 | 2026-01-31 | prompt_append + Oracle 改进（Step 0 措辞、精确递归保护、双 orchestrator、60s TTL），production-ready |

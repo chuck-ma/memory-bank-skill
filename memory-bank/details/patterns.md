@@ -326,6 +326,32 @@ function assessRisk(tool, args): "high" | "medium" | "low" {
    - mb:write 解锁会打穿安全边界
 4. **一句话总结**："在任何写工具执行前，如果本轮没读过 memory-reader 且写入风险高，则阻止写入并给出唯一下一步"
 
+## v7.1 Index-First + Direct-First 架构
+
+| 决策 | 日期 | 原因 |
+|------|------|------|
+| Routing Rules 意图驱动 | 2026-02-02 | 从"主题导向"改为"行动导向"，减少 agent 猜错文件 |
+| Drill-Down Protocol 两层读取 | 2026-02-02 | 确定性流程：direct read → memory-reader 升级 → 引用指针 |
+| Reader 去强依赖 | 2026-02-02 | 小读取直接读，大读取才用 reader；减少调度开销 |
+| Gating 门槛收紧 | 2026-02-02 | 高风险写前必须读 patterns.md（非 MEMORY.md） |
+| 两层足够原则 | 2026-02-02 | 不强推 details/index.md；用 glob 兜底 |
+| 信息密度三段式 | 2026-02-02 | 结论优先 + 边界条件 + 指针 |
+| MEMORY.md 新模板 | 2026-02-02 | 增加 Drill-Down Protocol / Write Safety / Top Quick Answers |
+
+**设计来源**：wechat_context 知识库设计启示 + Oracle 三轮讨论共识
+
+**核心问题**：
+1. Agent 不知道该读哪个文件（主题导向路由的歧义）
+2. Reader 开销大但不调又容易幻觉（缺少升级路径）
+3. MEMORY.md 内容策略不清晰（L1 vs L2 边界模糊）
+
+**解决方案**：
+1. **意图驱动路由**：按"你想做什么"触发，不按"这属于什么主题"分类
+2. **两层读取协议**：direct read 1-3 文件 → 不够再升级 memory-reader → 回答必须有引用
+3. **确定性触发**：不做复杂度判断，用关键词/操作类型/文件数阈值
+
+**详细设计**：见 [design-index-first-architecture.md](design/design-index-first-architecture.md)
+
 <!-- MACHINE_BLOCK_END -->
 
 <!-- USER_BLOCK_START -->
