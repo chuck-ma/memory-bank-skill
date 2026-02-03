@@ -1600,14 +1600,18 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
                 sessionID, gatingKey: dfGatingKey, tool, targetPaths: dfTargetPaths,
               })
               throw new Error(
-                `[Doc-First Gate] 请先沉淀工作文档再写代码。\n\n` +
-                `请用 MemoryWriter 先记录你要做什么：\n` +
-                `• 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md\n` +
-                `• 新功能 / 需求 → requirements/REQ-xxx.md\n` +
-                `• 重构 / 优化 → design/design-xxx.md\n` +
-                `• 简单变更 → 追加到 progress.md\n\n` +
+                `[Doc-First Gate] 请先检查相关文档再写代码。\n\n` +
+                `**第一步：检查已有文档**\n` +
+                `先在 memory-bank/details/ 中搜索是否已有相关的需求/设计文档。\n\n` +
+                `**第二步：根据结果行动**\n` +
+                `• **已有相关文档** → 对照检查原始描述是否准确，如有偏差先修正文档再改代码\n` +
+                `• **无相关文档** → 用 MemoryWriter 先记录再动手：\n` +
+                `  - 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md\n` +
+                `  - 新功能 / 需求 → requirements/REQ-xxx.md\n` +
+                `  - 重构 / 优化 → design/design-xxx.md\n` +
+                `  - 简单变更 → 追加到 progress.md\n\n` +
                 `调用方式: proxy_task({ subagent_type: "memory-bank-writer", ... })\n` +
-                `写完文档后再执行代码修改。`
+                `确认文档无误后再执行代码修改。`
               )
             } else {
               dfState.docFirstWarned = true
@@ -1621,12 +1625,16 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
                   variant: PLUGIN_PROMPT_VARIANT,
                   parts: [{
                     type: "text",
-                    text: `## ⚠️ [Doc-First] 建议先沉淀工作文档再写代码\n\n` +
-                      `请用 MemoryWriter 先记录你要做什么，并作为第一优先级 todo：\n` +
-                      `• 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md\n` +
-                      `• 新功能 / 需求 → requirements/REQ-xxx.md\n` +
-                      `• 重构 / 优化 → design/design-xxx.md\n` +
-                      `• 简单变更 → 追加到 progress.md\n\n` +
+                    text: `## ⚠️ [Doc-First] 建议先检查相关文档再写代码\n\n` +
+                      `**第一步：检查已有文档**\n` +
+                      `先在 memory-bank/details/ 中搜索是否已有相关的需求/设计文档。\n\n` +
+                      `**第二步：根据结果行动**\n` +
+                      `• **已有相关文档** → 对照检查原始描述是否准确，如有偏差先修正文档再改代码\n` +
+                      `• **无相关文档** → 用 MemoryWriter 先记录再动手：\n` +
+                      `  - 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md\n` +
+                      `  - 新功能 / 需求 → requirements/REQ-xxx.md\n` +
+                      `  - 重构 / 优化 → design/design-xxx.md\n` +
+                      `  - 简单变更 → 追加到 progress.md\n\n` +
                       `调用方式: \`proxy_task({ subagent_type: "memory-bank-writer", ... })\``
                   }]
                 }
