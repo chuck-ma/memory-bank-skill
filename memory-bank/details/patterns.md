@@ -80,9 +80,10 @@
 - memory-reader 发现记忆与实现冲突时，主动告知主 Agent
 - 建议调用 Memory Bank Writer 更新记忆
 
-**Plugin 注入内容变化**：
-- 从"注入大段上下文"改为"注入行为规则"
-- 规则：收到相关消息 → 调用 memory-reader → 获取上下文 → 继续工作
+**Plugin 注入内容变化（历史设想，v7.1 实际行为不同）**：
+- 原设想：从"注入大段上下文"改为"注入行为规则"
+- 原设想流程：收到相关消息 → 调用 memory-reader → 获取上下文 → 继续工作
+- **v7.1 实际行为**：Plugin 仍注入 MEMORY.md 内容 + Memory Bank Protocol；memory-reader 不会被自动调用，而是在满足升级条件时由 Skill/Protocol 引导主 Agent 手动调用
 
 **工作量估算**：
 - 可用原型：1-4 小时
@@ -259,27 +260,33 @@ interface MessageState {
 ```
 
 **捕获读操作**（tool.execute.before）：
-- 当 AI 调用 read/glob 读取 memory-bank/ 下文件时，记录到 readFiles
-- 如果读了 patterns.md 或 MEMORY.md，标记 contextSatisfied = true
+- 当 AI 调用 `read` 读取 memory-bank/ 下文件时，记录到 readFiles（v7.1 已收紧：仅 `read` 工具，不含 glob）
+- 如果读了 memory-bank/details/patterns.md（精确路径匹配），标记 contextSatisfied = true
+
+> **注意**：v7.1 已收紧此条件，仅认可精确路径 `memory-bank/details/patterns.md` 或调用 `memory-reader`。
 
 **拦截写操作**（tool.execute.before）：
 - 当 AI 调用 edit/write/apply_patch 时，检查 contextSatisfied
 - 高风险写 + 未读上下文 → throw Error 阻止
 - 低风险写 + 未读上下文 → warn 警告（默认不阻止）
 
-**风险评估函数**：
+**风险评估函数**（v7.1）：
 ```typescript
 function assessRisk(tool, args): "high" | "medium" | "low" {
-  // 多文件写 = 高风险
-  if (tool === "multiedit") return "high"
-  if (tool === "apply_patch" && countPatchFiles(args.patch) > 1) return "high"
+  // v7.1: safe-path 白名单 → 强制 low
+  // memory-bank/details/progress.md, learnings/, requirements/, index.md
+  if (allPathsAreSafe) return "low"
   
-  // 敏感路径 = 高风险
+  // 敏感路径命中 → high
   const sensitivePatterns = [
     /^src\/auth\//, /^src\/security\//, /package\.json$/,
-    /tsconfig\.json$/, /docker\//, /infra\//
+    /tsconfig\.json$/, /docker\//, /infra\//, /plugin\/.*\.ts$/
   ]
-  if (sensitivePatterns.some(p => p.test(targetPath))) return "high"
+  if (anyPathMatchesSensitive) return "high"
+  
+  // v7.1: 多文件写 = 中风险（会触发 warning，但不会 block）
+  if (tool === "multiedit") return "medium"
+  if (tool === "apply_patch" && fileCount > 1) return "medium"
   
   return "low"
 }
@@ -315,7 +322,9 @@ function assessRisk(tool, args): "high" | "medium" | "low" {
 | MEMORY_BANK_GUARD_MODE=warn | 默认档；仅提醒，不拦截 |
 | MEMORY_BANK_GUARD_MODE=block | 仅对高风险写拦截 |
 
-**启用条件**：memory-bank/ 目录不存在时不启用 gating。
+**启用条件**：由 `MEMORY_BANK_GUARD_MODE` 环境变量控制（off/warn/block），默认 warn。Gating 不检查 memory-bank/ 是否存在。
+
+> **注意**：Gating 仅检查是否*尝试*读取 `memory-bank/details/patterns.md`（或调用 `memory-reader`），不验证读取是否成功。因此在未初始化项目中，尝试读取不存在的 patterns.md 也会满足 gating 条件。建议在开始工作前运行 `/memory-bank-refresh` 初始化。
 
 ### Oracle 讨论关键结论
 
@@ -324,7 +333,8 @@ function assessRisk(tool, args): "high" | "medium" | "low" {
 3. **极简替代方案（预注入 details + mb:write 解锁）的致命问题**：
    - 预注入会造成 token/注意力污染
    - mb:write 解锁会打穿安全边界
-4. **一句话总结**："在任何写工具执行前，如果本轮没读过 memory-reader 且写入风险高，则阻止写入并给出唯一下一步"
+4. **一句话总结（v7.0 原文，v7.1 已更正）**："在任何写工具执行前，如果本轮没读过 memory-reader 且写入风险高，则阻止写入并给出唯一下一步"
+   > **v7.1 更正**：满足条件已收紧为"读过 `memory-bank/details/patterns.md`（精确路径）或调用了 `memory-reader`"。
 
 ## v7.1 Index-First + Direct-First 架构
 
