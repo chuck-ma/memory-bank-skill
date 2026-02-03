@@ -1,7 +1,8 @@
-# REQ-001: Memory Bank 模板版本升级路径
+# REQ-004: Memory Bank 模板版本升级路径
 
 > 创建于: 2026-02-02
-> 状态: Proposed
+> 状态: Done
+> 实现位置: writer.md Refresh 流程 + src/cli.ts 命令描述
 
 ## 背景
 
