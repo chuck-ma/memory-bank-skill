@@ -424,7 +424,7 @@ async function installCommands(
   const commandPath = join(commandsDir, "memory-bank-refresh.md")
   
   const commandContent = `---
-description: 初始化、迁移或刷新 Memory Bank
+description: 初始化、升级、迁移或刷新 Memory Bank
 agent: memory-bank-writer
 ---
 
@@ -433,12 +433,14 @@ agent: memory-bank-writer
 ## 检测当前结构
 
 1. 检查 \`memory-bank/\` 目录是否存在
-2. 检查是新结构（MEMORY.md）还是旧结构（_index.md, brief.md, active.md）
+2. 如存在 MEMORY.md，检测版本标记 \`<!-- MEMORY_BANK_TEMPLATE:v7.x -->\`
+3. 检查是否存在旧结构（_index.md, brief.md, active.md）
 
 ## 根据检测结果执行
 
 - **不存在 memory-bank/**：执行初始化流程
-- **存在 MEMORY.md**：执行刷新流程
+- **存在 MEMORY.md，版本 >= v7.1**：执行刷新流程
+- **存在 MEMORY.md，版本 < v7.1 或标记缺失**：执行升级流程（v7.0 → v7.1）
 - **存在旧结构**：执行迁移流程
 
 ## 流程详情

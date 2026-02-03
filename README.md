@@ -14,9 +14,9 @@ Memory Bank 是一个 **OpenCode 技能（Skill）**，用于解决 AI 对话的
 - 不记得当前在做什么任务
 
 Memory Bank 通过结构化 Markdown 文件持久化项目上下文，实现：
-- **零初始化**：不需要手动 init，随项目推进自动创建
+- **按需初始化**：首次使用运行 `/memory-bank-refresh`，之后自动维护
 - **智能检索**：基于 AI 语义理解，自动加载相关上下文
-- **自动写入**：工作过程中自动记录重要发现和决策
+- **引导式写入**：AI 检测写入时机并提议，用户确认后执行
 
 ---
 
@@ -48,7 +48,7 @@ bunx memory-bank-skill doctor
 
 | 操作 | 目标路径 |
 |------|----------|
-| 复制 Skill 文件 | `~/.config/opencode/skills/memory-bank/` 和 `memory-bank-writer/` |
+| 复制 Skill 文件 | `~/.config/opencode/skills/memory-bank/`（含 `references/writer.md`） |
 | 配置 opencode.json | 添加 `permission.skill=allow`，注册插件和 agent |
 | 注册 Agent | 添加 `memory-bank-writer` agent（用于写入守卫） |
 | 写入 manifest | `~/.config/opencode/skills/memory-bank/.manifest.json` |
@@ -57,13 +57,13 @@ bunx memory-bank-skill doctor
 
 ## 快速开始
 
-**不需要手动初始化。** Memory Bank 会在你开始工作时自动检测和创建：
+首次使用需运行初始化命令，之后 Memory Bank 会自动维护：
 
-| 场景 | AI 行为 |
-|------|---------|
-| **已有代码库** | 扫描 package.json/README 等，自动生成 MEMORY.md + details/tech.md |
-| **新项目** | 不创建任何文件，等你开始工作后按需创建 |
-| **已有 Memory Bank** | 直接读取 MEMORY.md，恢复上下文 |
+| 场景 | 行为 |
+|------|------|
+| **首次使用** | 运行 `/memory-bank-refresh` 初始化，扫描项目生成 MEMORY.md |
+| **已有 Memory Bank** | 自动注入 MEMORY.md 内容到 AI 上下文 |
+| **需要更新** | AI 检测到变更时会提议更新，用户确认后执行 |
 
 ---
 
@@ -180,5 +180,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 6.1.0
-- **主要更新**: v6.1.0 统一 Task Tool 架构（同步执行 + Writer 自动触发）
+- **版本**: 7.1.0
+- **主要更新**: v7.1 Index-First + Direct-First 架构（意图驱动路由 + Gating 收紧 + 两层读取协议 + 模板升级路径）

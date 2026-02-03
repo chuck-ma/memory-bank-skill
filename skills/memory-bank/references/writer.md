@@ -64,7 +64,7 @@ proxy_task({
 
 ## Refresh 流程（/memory-bank-refresh）
 
-通过 `/memory-bank-refresh` 触发，执行初始化、迁移或刷新。
+通过 `/memory-bank-refresh` 触发，执行初始化、升级、迁移或刷新。
 
 ### Detect（检测）
 
@@ -75,7 +75,10 @@ proxy_task({
    → 进入【初始化】流程
 
 2. 存在 memory-bank/MEMORY.md 
-   → 进入【刷新】流程
+   → 读取版本标记 <!-- MEMORY_BANK_TEMPLATE:v7.x -->
+   ├─ 版本 >= v7.1 → 进入【刷新】流程
+   ├─ 版本 < v7.1 → 进入【升级】流程
+   └─ 标记缺失 → 进入【升级】流程
 
 3. 存在旧结构（_index.md, brief.md, active.md）但不存在 MEMORY.md
    → 进入【迁移】流程
@@ -100,39 +103,107 @@ proxy_task({
        ├── tech.md
        ├── patterns.md
        ├── progress.md
-       ├── design/
-       │   └── index.md
-       ├── requirements/
-       │   └── index.md
-       └── learnings/
-           └── index.md
+       ├── design/           # index.md 可选，仅当文件 > 8 时创建
+       ├── requirements/     # index.md 可选，仅当文件 > 8 时创建
+       └── learnings/        # index.md 可选，仅当文件 > 8 时创建
 
-3. 生成 MEMORY.md：
+3. 生成 MEMORY.md（v7.1 模板）：
+   - 版本标记：<!-- MEMORY_BANK_TEMPLATE:v7.1 -->
    - Project Snapshot（从 README.md 等提取）
    - Current Focus（初始为空或基于当前任务）
-   - Decision Highlights（初始为空）
-   - Routing Rules（标准路由模板）
+   - Decision Highlights（初始为空，表格格式）
+   - Routing Rules（意图驱动，按场景而非文件列表）
+   - Drill-Down Protocol（两层读取协议说明）
+   - Write Safety Rules（禁止写入敏感信息）
+   - Top Quick Answers（常见问题快速答案，初始为空）
 
 4. 生成详情文件：
    - details/tech.md（技术栈）
    - details/patterns.md（决策记录，初始为空模板）
    - details/progress.md（进度状态，初始为空模板）
 
-5. 生成二级索引（details/*/index.md）
+5. 二级索引为可选（建议阈值，非硬门槛）：
+   - 建议当目录下文件 > 8 时创建 index.md
+   - 如果已存在 index.md 则继续维护
+   - 否则用 glob 兜底（Reader 自动检测）
 ```
+
+#### 升级流程（v7.0 → v7.1）
+
+当 MEMORY.md 存在但版本 < v7.1 或版本标记缺失时，执行 in-place 升级。
+
+**前置检查**：
+```
+检查区块标记完整性：
+├─ <!-- MACHINE_BLOCK_START --> 存在
+├─ <!-- MACHINE_BLOCK_END --> 存在
+├─ <!-- USER_BLOCK_START --> 存在
+└─ <!-- USER_BLOCK_END --> 存在
+
+任一缺失 → 中止升级，提示用户手动修复标记
+```
+
+**升级步骤（Append-Only）**：
+```
+1. 保留 USER_BLOCK
+   - 原样保持，不做任何修改
+
+2. 更新版本标记
+   - 定位 <!-- MACHINE_BLOCK_START --> 后
+   - 如存在 MEMORY_BANK_TEMPLATE:v7.x → 替换为 v7.1
+   - 如不存在 → 插入 <!-- MEMORY_BANK_TEMPLATE:v7.1 -->
+
+3. 追加缺失区块（在 <!-- MACHINE_BLOCK_END --> 前）
+   仅追加不存在的（精确标题匹配）：
+   
+   - ## Routing Rules（意图驱动）
+     如已存在 ## Routing Rules（无后缀）→ 保留不动
+     追加新版并在首行注明：
+     > 如上方存在旧的 ## Routing Rules，视为 legacy；以本节意图驱动路由为准。
+     
+   - ## Drill-Down Protocol
+   - ## Write Safety Rules
+   - ## Top Quick Answers
+   
+   使用 templates.md 中的标准内容
+```
+
+**Plan 输出示例**：
+```
+检测到 MEMORY.md 版本 < v7.1，将执行升级：
+- 更新版本标记为 v7.1
+- 追加区块：## Routing Rules（意图驱动）
+- 追加区块：## Drill-Down Protocol
+- 追加区块：## Write Safety Rules
+- 追加区块：## Top Quick Answers
+
+USER_BLOCK 将保持不变。
+
+回复"好"或"确认"执行升级。
+```
+
+**设计文档**：详见 `memory-bank/details/design/design-template-upgrade.md`
 
 #### 迁移流程
 
 ```
-1. 读取旧文件内容：
+1. 检测模板版本：
+   - 读取 MEMORY.md，查找 <!-- MEMORY_BANK_TEMPLATE:v7.x --> 标记
+   - 如果不存在或版本 < v7.1，进入迁移
+
+2. 读取旧文件内容：
    - brief.md → 提取 Project Snapshot
    - active.md → 提取 Current Focus
    - patterns.md → 提取 Decision Highlights
    - _index.md → 参考但不迁移
 
-2. 生成 MEMORY.md（合并以上内容）
+3. 生成 MEMORY.md（v7.1 模板）：
+   - 合并 Project Snapshot + Current Focus + Decision Highlights
+   - 添加新固定区块：Drill-Down Protocol、Write Safety Rules、Top Quick Answers
+   - 添加意图驱动的 Routing Rules（而非旧的文件列表）
+   - 添加版本标记：<!-- MEMORY_BANK_TEMPLATE:v7.1 -->
 
-3. 迁移详情文件（使用 git mv 保留历史）：
+4. 迁移详情文件（使用 git mv 保留历史）：
    - tech.md → details/tech.md
    - patterns.md → details/patterns.md
    - progress.md → details/progress.md（如存在）
@@ -140,9 +211,16 @@ proxy_task({
    - requirements/ → details/requirements/
    - learnings/ → details/learnings/
 
-4. 生成二级索引（details/*/index.md）
+5. 处理不匹配内容：
+   - 旧 Routing Rules 重命名为"Legacy Routing (Topic)"，保存到 memory-bank/legacy.md
+   - 其他无法分类的内容也归档到 legacy.md
 
-5. 删除旧入口文件：
+6. 二级索引为可选（建议阈值，非硬门槛）：
+   - 建议当目录下文件 > 8 时创建 index.md
+   - 如果已存在 index.md 则继续维护
+   - 否则用 glob 兜底
+
+7. 删除旧入口文件：
    - _index.md
    - brief.md
    - active.md
@@ -153,15 +231,20 @@ proxy_task({
 #### 刷新流程
 
 ```
-1. 重新扫描项目结构
+1. 检测模板版本：
+   - 读取 MEMORY.md，查找 <!-- MEMORY_BANK_TEMPLATE:v7.1 --> 标记
+   - 如果版本 < v7.1，建议用户运行迁移流程
 
-2. 更新 MEMORY.md：
+2. 重新扫描项目结构
+
+3. 更新 MEMORY.md：
    - Project Snapshot（如有明显变化）
-   - Routing Rules（检查 details/ 结构变化）
+   - Routing Rules（检查 details/ 结构变化，保持意图驱动格式）
 
-3. 检查二级索引完整性：
-   - 新增的详情文件 → 添加路由条目
-   - 删除的详情文件 → 移除路由条目
+4. 检查二级索引（可选）：
+   - 仅当目录下文件 > 8 时检查 index.md 完整性
+   - 新增的详情文件 → 添加路由条目（如有 index.md）
+   - 删除的详情文件 → 移除路由条目（如有 index.md）
 ```
 
 ---
@@ -172,9 +255,9 @@ proxy_task({
 |------|---------|
 | 焦点变更 | MEMORY.md → Current Focus |
 | 技术决策 | MEMORY.md → Decision Highlights + details/patterns.md |
-| 新需求 | details/requirements/REQ-xxx.md + 更新 index.md |
-| 设计文档 | details/design/xxx.md + 更新 index.md |
-| Bug/踩坑 | details/learnings/xxx.md + 更新 index.md |
+| 新需求 | details/requirements/REQ-xxx.md（如 index.md 存在则同步更新） |
+| 设计文档 | details/design/xxx.md（如 index.md 存在则同步更新） |
+| Bug/踩坑 | details/learnings/xxx.md（如 index.md 存在则同步更新） |
 
 ---
 
@@ -197,12 +280,14 @@ proxy_task({
 3. Glob 检查现有文件：
    - 找到相关文件 → 更新
    - 没找到 → 创建新文件
-4. 更新对应的 index.md 路由
+4. 如果对应目录下 index.md 已存在 → 同步更新路由条目
+   如果不存在且目录文件数 > 8 → 创建 index.md
+   否则 → 跳过（用 glob 兜底）
 ```
 
 ### 二级索引更新
 
-每次在 details/ 下创建/删除文件时，同步更新对应的 index.md：
+当对应目录下 index.md **已存在**时，在 details/ 下创建/删除文件后同步更新：
 
 ```markdown
 # Design Router

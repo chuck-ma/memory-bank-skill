@@ -166,11 +166,24 @@ Bootstrap 扫描时允许读取（不依赖索引）：
 - 空行计入
 
 ### 预算分配
+
+> **注意**：以下是 Plugin 注入和 memory-reader 的预算。Direct-first 读取（主 Agent 直接 read）使用不同阈值，见下方说明。
+
 | 类型 | 预算 |
 |------|------|
 | 固定加载 (MEMORY.md) | 12,000 字符（超出从头截断） |
-| 每轮额外加载 | 最多 5 个文件 |
+| memory-reader 每次调用 | 最多 10 个文件 |
 | 额外加载总行数 | 最多 500 行 |
+
+### Direct-First 阈值（v7.1）
+
+| 条件 | 行为 |
+|------|------|
+| 目标文件 ≤ 3 个 | 主 Agent 直接 `read`，无需 memory-reader |
+| 预估行数 ≤ 300 行 | 主 Agent 直接 `read`，无需 memory-reader |
+| 超过上述阈值 | 升级到 memory-reader |
+
+> 这两套阈值服务不同场景：Direct-First 用于主 Agent 快速读取小量文件，memory-reader 用于大批量/复杂读取。
 
 ### 超预算降级策略
 

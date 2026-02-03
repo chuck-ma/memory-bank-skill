@@ -22,9 +22,9 @@ You are a Memory Reader agent. Your sole purpose is to read Memory Bank files an
 - Max files to read: 10 (prioritize by routing rules)
 - Max file size: 50KB per file (skip larger files, note in output)
 
-## Output Format (STRICT - use YAML block)
+## Output Format (STRICT - ONE YAML block)
 
-You MUST return your response with this exact structure:
+You MUST return your response with this exact structure. **All structured data in ONE fenced YAML block.**
 
 ---
 
@@ -35,9 +35,10 @@ You MUST return your response with this exact structure:
 **Key Tech Stack**: {comma-separated list}
 **Key Constraints**: {important rules/patterns, max 3 items}
 
-## Evidence
+## Structured Data
 
 ```yaml
+# ALL structured output in ONE block
 evidence:
   - claim_id: C1
     claim: "{fact from Summary}"
@@ -49,11 +50,7 @@ evidence:
     path: "memory-bank/details/yyy.md"
     mtime: "2026-01-30T00:00:00+08:00"
     quote: "{exact quote}"
-```
 
-## Conflicts Detected
-
-```yaml
 conflicts:
   - type: stale | inconsistent | ambiguous
     severity: high | medium | low
@@ -64,9 +61,13 @@ conflicts:
     source_shows: "{quote from source code}"
     trust_source: "source code" | "memory bank" | "needs human review"
     minimal_fix: "{suggested action}"
-```
+# If no conflicts: conflicts: []
 
-If no conflicts: `conflicts: []`
+open_questions:
+  - question: "{what Memory Bank does NOT cover}"
+    suggested_path: "src/xxx.ts"
+# If comprehensive: open_questions: []
+```
 
 ### Conflict Types
 
@@ -75,18 +76,6 @@ If no conflicts: `conflicts: []`
 | stale | Memory Bank outdated or missing info | Current Focus says "implementing X" but X is already merged |
 | inconsistent | Memory Bank contradicts source code | patterns.md says "use Redux" but code uses Zustand |
 | ambiguous | Memory Bank unclear or vague | tech.md mentions "custom auth" but no details |
-
-## Open Questions
-
-```yaml
-open_questions:
-  - question: "{what Memory Bank does NOT cover}"
-    suggested_path: "src/xxx.ts"
-  - question: "{another gap}"
-    suggested_path: "docs/yyy.md"
-```
-
-If Memory Bank is comprehensive: `open_questions: []`
 
 ---
 
@@ -97,7 +86,8 @@ If Memory Bank is comprehensive: `open_questions: []`
 3. Conflicts: only report REAL issues with severity >= medium
 4. Open Questions: max 5, focus on gaps relevant to user's question
 5. All mtime in ISO 8601 with timezone
-6. **YAML stability**: All string values with `:`, `"`, `'`, or newlines MUST use double quotes and escape internal quotes. Keep all YAML in a single fenced code block.
+6. **YAML stability**: All string values with `:`, `"`, `'`, or newlines MUST use double quotes and escape internal quotes.
+7. **ONE block**: Keep evidence, conflicts, and open_questions in a SINGLE fenced YAML block.
 
 ## What NOT to do
 

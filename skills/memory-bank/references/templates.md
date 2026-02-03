@@ -7,31 +7,73 @@
 ## MEMORY.md（单入口）
 
 ```markdown
-# Memory Bank
-
-> 项目记忆系统单入口。包含项目概览、当前焦点及详细文档路由。
+# Project Memory
 
 <!-- MACHINE_BLOCK_START -->
+<!-- MEMORY_BANK_TEMPLATE:v7.1 -->
+
 ## Project Snapshot
-- **一句话描述**: {项目是什么}
-- **核心目标**: {目标 1}
-- **关键约束**: {约束 1}
-- **技术栈**: {语言/框架}
+- **结论**: {项目是什么，一句话}
+- **边界**: 本文件只保留仍影响当下实现的信息；详细内容在 `memory-bank/details/`
+- **指针**: {核心实现路径}；技术栈 `memory-bank/details/tech.md`
 
 ## Current Focus
-- **正在做什么**: {正在做什么}
+> 更新于: {YYYY-MM-DD}
+
+- **当前焦点**: {正在做什么}
 - **下一步**:
   - [ ] {next 1}
-- **阻塞项**: {blocker，无则写「无」}
+- **阻塞项**: 无
 
-## Routing Rules
-> 引导 AI 寻找详细文档。
+## Decision Highlights (Still Binding)
 
-| 路径 | 标题 | 摘要 | 更新日期 |
-|------|------|------|----------|
-| details/tech.md | Tech Stack | 技术栈、命令与环境要求 | YYYY-MM-DD |
-| details/patterns.md | Patterns | 技术决策与代码约定 | YYYY-MM-DD |
-| details/progress.md | Progress | 功能完成状态与已知问题 | YYYY-MM-DD |
+> 只保留"仍影响当前实现"的决策。完整历史见 `memory-bank/details/patterns.md`。
+
+| 决策 | 日期 | 对实现的直接约束 |
+|------|------|-----------------|
+
+## Routing Rules（意图驱动）
+
+按"你想做什么"选择 1-3 个最相关的文件读取。
+
+### 通用意图
+
+| 意图 | 目标文件 |
+|------|----------|
+| 了解技术栈/命令/环境 | `memory-bank/details/tech.md` |
+| 查看技术决策/约定 | `memory-bank/details/patterns.md` |
+| 查看进度/最近变更 | `memory-bank/details/progress.md` |
+| 查找需求文档 | `memory-bank/details/requirements/index.md` |
+| 查找踩坑经验 | `memory-bank/details/learnings/index.md` |
+| 不确定文件名 | 先 `glob("memory-bank/details/**/*.md")` 再读 |
+
+### 项目特定意图（按需添加）
+
+| 意图 | 目标文件 |
+|------|----------|
+
+## Drill-Down Protocol
+
+1. **先用 MEMORY.md 给出可执行结论**；需要证据/细节时再按路由 drill-down
+2. **默认 direct read 1-3 个 details/ 文件**（读够就停）
+3. **升级条件**：需要证据链/冲突检测/跨文件汇总 → 调用 `memory-reader`
+4. **反幻觉**：未读到/未写明的信息 = 未知，不要补全
+5. **回答时必须给引用指针**（至少 1-2 个文件路径）
+
+## Write Safety Rules
+
+- 主 agent **禁止**直接写 `memory-bank/`（Plugin 强制拦截）
+- 只能通过 `proxy_task(subagent_type="memory-bank-writer")` 写入，且仅允许 `.md`
+- 写入前必须 Proposal → 用户确认
+- 禁止写入任何敏感信息（API key、token、密码、私钥）
+
+## Top Quick Answers
+
+> 最多 8 条；必须可验证；每条给文件指针。过期就删。
+
+1. Q: {高频问题}
+   A: {最短答案} → 详见 `{文件路径}`
+
 <!-- MACHINE_BLOCK_END -->
 
 <!-- USER_BLOCK_START -->

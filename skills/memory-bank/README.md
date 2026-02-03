@@ -35,42 +35,23 @@ memory-bank/
 
 ## 使用方法
 
-### 初始化（可选）
-默认无需初始化，仅在需要手动创建时使用。
+### 初始化/刷新
+使用 `/memory-bank-refresh` 命令初始化、迁移或刷新 Memory Bank：
 ```
-初始化记忆
-init memory bank
-```
-
-### 更新
-```
-更新记忆
-update memory bank
+/memory-bank-refresh
 ```
 
-### 新建需求
-```
-新需求: 用户登录功能
-new req: user login
-```
+### 写入触发
+Memory Bank 写入由 AI 自动检测时机，流程为：
+1. AI 检测到写入时机（新决策、新经验等）
+2. AI 用自然语言询问是否写入
+3. 用户确认后，AI 调用 `memory-bank-writer` 执行
 
-### 记录经验
-```
-记录经验: bug Safari兼容问题
-log learning: bug safari-compat
-```
-
-### 新建模块文档
-```
-新模块文档: scanner
-new module doc: scanner
-```
-
-### 查看状态
-```
-项目状态
-project status
-```
+### 常见写入场景
+- 新需求/范围变更
+- 新技术决策/约定
+- Bug 修复经验
+- 项目进度更新
 
 ## 文件说明
 

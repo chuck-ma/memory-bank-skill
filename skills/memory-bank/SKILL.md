@@ -54,14 +54,13 @@ memory-bank/
 │
 └── details/               # 详情层（按需读取）
     ├── tech.md            # 技术栈 + 命令
-    ├── design/            # 设计文档
-    │   ├── index.md       # 二级路由
+    ├── patterns.md        # 技术决策 + 代码约定
+    ├── progress.md        # 完成状态 + 历史变更
+    ├── design/            # 设计文档（index.md 可选）
     │   └── *.md
-    ├── requirements/      # 需求文档
-    │   ├── index.md
+    ├── requirements/      # 需求文档（index.md 可选）
     │   └── REQ-*.md
-    └── learnings/         # 经验记录
-        ├── index.md
+    └── learnings/         # 经验记录（index.md 可选）
         └── *.md
 ```
 
@@ -85,27 +84,36 @@ Plugin 自动注入 `memory-bank/MEMORY.md` 内容到 system prompt。
 ### 读取阶段
 
 1. **MEMORY.md 已由 Plugin 注入**，无需手动读取
-2. 当用户问题涉及项目背景时，启动 **memory-reader** 并行任务
-3. 根据 MEMORY.md 的 **Routing Rules** 按需读取 details/
-4. **渐进读取**：默认 1-3 个详情文件，信息不足再追加
+2. **Direct-first（默认）**：按 Routing Rules 直接读取 1-3 个 details/ 文件
+   - 使用 `read({ filePath: "memory-bank/details/xxx.md" })`
+   - 信息足够则停止，给出引用指针
+3. **升级条件**（满足任一时才调用 memory-reader）：
+   - 用户要求证据/引用（"给出处"、"为什么"）
+   - 需要冲突检测（怀疑文档与代码不一致）
+   - 目标文件 > 3 个
+   - 预估行数 > 300 行
+   - 跨多个主题目录
+4. **回答时必须给引用指针**（至少 1-2 个文件路径）
 
-#### memory-reader 同步子任务
+#### memory-reader 同步子任务（仅升级时使用）
 
-当用户问题涉及项目上下文时，同步调用 memory-reader 获取结构化上下文包：
+> 注意：memory-reader 是"升级路径"，不是默认调用。日常读取使用 direct read。
+
+当用户问题涉及项目上下文且满足升级条件时，同步调用 memory-reader 获取结构化上下文包：
 
 ```typescript
 proxy_task({
   subagent_type: "memory-reader",
   description: "Memory Bank context read",
-  prompt: "Goal: Load minimum repo context needed.\nConstraints: Read memory-bank/MEMORY.md first, then details/ as needed. No secrets. Max 10 files.\nOutput: ONE YAML block with selected_files, evidence, conflicts, context_pack.\n\nUser request: {question}"
+  prompt: "Goal: Load minimum repo context needed.\nConstraints: Read memory-bank/MEMORY.md first, then details/ as needed. No secrets. Max 10 files.\nOutput: Context Summary (Markdown) + ONE YAML block with evidence, conflicts, open_questions.\n\nUser request: {question}"
 })
 ```
 
-**触发条件**：
-- ✅ 涉及项目具体背景（技术栈、架构、历史决策）
-- ✅ 涉及"为什么这样做"、"之前怎么处理的"
-- ❌ 简单追问、通用编程问题
-- ❌ 关于 Memory Bank 本身的问题
+**升级触发条件**（仅在以下场景调用）：
+- 用户明确要求证据或引用链接
+- 需要跨多个文件的冲突检测
+- 目标文件数量 > 3 个或预估内容 > 300 行
+- 涉及多个主题目录的综合分析
 
 **冲突检测**：memory-reader 发现记忆与实现冲突时，会报告给主 Agent，建议调用 Writer 更新。
 

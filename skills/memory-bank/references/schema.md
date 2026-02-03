@@ -1,4 +1,11 @@
-# Memory Bank 结构化输出 Schema
+# Memory Bank 结构化输出 Schema（Legacy）
+
+> **⚠️ Legacy 文档**：此文件定义的 JSON 格式是 v6.x 设计，v7.1 已改用 YAML 格式。
+> 当前规范见 [memory-reader-prompt.md](memory-reader-prompt.md) 和 [reader.md](reader.md)。
+>
+> 此文件保留用于历史参考和潜在的工具集成场景。
+
+---
 
 > 此文件定义 Memory Bank 操作的结构化输出格式，用于决策审计和工具集成。
 
