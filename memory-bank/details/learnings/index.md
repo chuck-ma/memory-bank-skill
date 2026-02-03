@@ -13,5 +13,6 @@
 
 | 经验 | 说明 |
 |------|------|
+| [2026-02-03-opencode-plugin-hooks.md](2026-02-03-opencode-plugin-hooks.md) | OpenCode Hook 签名澄清：compacting 有 sessionID，system.transform 可选 |
 | [2026-01-29-skill-references-structure.md](2026-01-29-skill-references-structure.md) | Skill references 目录结构验证：符合官方规范 |
 | [2026-01-29-progressive-disclosure.md](2026-01-29-progressive-disclosure.md) | Progressive Disclosure 设计理念：入口层路由，详情层兑现 |

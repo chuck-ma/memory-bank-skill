@@ -8,6 +8,7 @@
 | [design-index-first-architecture.md](design-index-first-architecture.md) | v7.1 Index-First + Direct-First 架构：意图驱动路由 + 两层读取协议 |
 | [design-index-first-implementation.md](design-index-first-implementation.md) | v7.1 Index-First 实现方案：迁移/初始化/Gating/Protocol 详细设计 |
 | [design-template-upgrade.md](design-template-upgrade.md) | v7.0 → v7.1 模板升级：Append-Only 策略 + 版本检测 |
+| [design-session-anchors.md](design-session-anchors.md) | Session Anchors v3：压缩后恢复机制 + Recovery Gate（待实现） |
 | [testing-locally.md](testing-locally.md) | 本地测试指南：如何在本项目测试插件 |
 
 ## 历史设计（Legacy）

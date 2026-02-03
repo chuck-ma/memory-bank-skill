@@ -9,14 +9,16 @@
 - **指针**: 核心实现 `plugin/memory-bank.ts`；Skill 入口 `skills/memory-bank/SKILL.md`；CLI `src/cli.ts`
 
 ## Current Focus
-> 更新于: 2026-02-02
+> 更新于: 2026-02-03
 
-- **当前焦点**: v7.1 Index-First + Direct-First 架构 — ✅ Oracle PASS
+- **当前焦点**: Session Anchors v3 + Recovery Gate — 设计完成，待实现
 - **下一步**:
-  - [x] v7.1 架构设计与实现（6 文件核心变更）
-  - [x] Oracle 审查修复（45 项，R1-R11，11 轮迭代）
-  - [x] Oracle 最终 PASS 确认
-  - [x] REQ-004: v7.0 → v7.1 模板升级路径（设计 + 实现 + Oracle 验证）
+  - [x] v7.1 架构设计与实现
+  - [x] Oracle 审查修复
+  - [x] REQ-004: v7.0 → v7.1 模板升级路径
+  - [x] Session Anchors v3 设计（经 Oracle 3 轮对抗，已收敛）
+  - [x] OpenCode 插件 Hook 知识整理
+  - [ ] Session Anchors v3 实现（~200 行代码）
   - [ ] 向用户汇报最终结果
 - **阻塞项**: 无
 
@@ -54,6 +56,7 @@
 | 改注入逻辑/截断/Protocol | `plugin/memory-bank.ts` |
 | 改写前拦截/Gating | `memory-bank/details/design/design-gating-architecture.md` |
 | 改 v7.1 架构设计 | `memory-bank/details/design/design-index-first-architecture.md` |
+| 改压缩后恢复机制 | `memory-bank/details/design/design-session-anchors.md` |
 | 改 CLI 安装逻辑 | `src/cli.ts` |
 
 ## Drill-Down Protocol
