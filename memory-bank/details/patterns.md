@@ -374,6 +374,29 @@ function assessRisk(tool, args): "high" | "medium" | "low" {
 
 **详细信息**：见 [2026-02-03-opencode-plugin-hooks.md](learnings/2026-02-03-opencode-plugin-hooks.md)
 
+## v7.3.0 Doc-First Gate 默认启用（2026-02-03）
+
+| 决策 | 日期 | 原因 |
+|------|------|------|
+| Doc-First Gate 默认 warn | 2026-02-03 | dogfood 发现默认 off 导致 Gate 形同虚设 |
+| 前置 memory-bank 存在检查 | 2026-02-03 | 避免对无 MB 项目"提醒了但没法满足" |
+| 不存在时发初始化建议 | 2026-02-03 | session 内只提醒一次，复用 initReminderFired |
+
+**背景**：
+- 创建 `A.py` 测试时，Doc-First Gate 未触发
+- 根因：`DOC_FIRST_MODE` 默认 `"off"`，Gate 完全不生效
+- 同时 Read Gate 对单文件非敏感路径 default 到 `"low"` 风险，也不触发
+
+**解决方案**：
+1. `DOC_FIRST_MODE` 默认改为 `"warn"`
+2. Doc-First Gate 触发前检查 `memory-bank/` 是否存在
+3. 不存在 → 发"建议初始化"提醒（session 内一次）→ 跳过 Doc-First
+4. 存在 → 正常 Doc-First 流程（warn 或 block）
+
+**实现位置**：`plugin/memory-bank.ts` lines 32, 1570-1593
+
+**详细需求**：见 [REQ-005-intent-declaration-gate.md](requirements/REQ-005-intent-declaration-gate.md)
+
 <!-- MACHINE_BLOCK_END -->
 
 <!-- USER_BLOCK_START -->
