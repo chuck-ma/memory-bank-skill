@@ -39,7 +39,7 @@ memory-bank-skill/
 ├── src/cli.ts              # CLI 入口
 ├── dist/cli.js             # 编译输出
 ├── plugin/memory-bank.ts   # OpenCode 插件
-├── skill/memory-bank/      # Skill 定义
+├── skills/memory-bank/     # Skill 定义
 ├── templates/              # MB 模板
 ├── docs/                   # 设计文档
 └── memory-bank/            # 本项目的 Memory Bank
@@ -49,7 +49,7 @@ memory-bank-skill/
 
 | 用途 | 路径 |
 |-----|------|
-| Skill 安装位置 | `~/.config/opencode/skill/memory-bank/` |
+| Skill 安装位置 | `~/.config/opencode/skills/memory-bank/` |
 | 插件配置 | `~/.config/opencode/opencode.json` 的 `plugin` 数组（`memory-bank-skill`） |
 | 配置文件 | `~/.config/opencode/opencode.json` |
 | 启动指令 | `~/.config/opencode/AGENTS.md` |

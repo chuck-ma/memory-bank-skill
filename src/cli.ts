@@ -770,6 +770,37 @@ async function checkAndCleanOpenCodeCache(): Promise<{ cleaned: boolean; message
 }
 
 // ============================================================================
+// Legacy Cleanup
+// ============================================================================
+
+async function cleanupLegacySkillDir(): Promise<{ cleaned: boolean; message?: string }> {
+  const legacyDir = join(homedir(), ".config", "opencode", "skill", "memory-bank")
+
+  if (!(await exists(legacyDir))) {
+    return { cleaned: false }
+  }
+
+  try {
+    await fs.rm(legacyDir, { recursive: true, force: true })
+
+    const parentDir = join(homedir(), ".config", "opencode", "skill")
+    try {
+      const remaining = await fs.readdir(parentDir)
+      if (remaining.length === 0) {
+        await fs.rmdir(parentDir)
+      }
+    } catch {}
+
+    return {
+      cleaned: true,
+      message: `Removed legacy skill/ directory (was: ${legacyDir})`,
+    }
+  } catch {
+    return { cleaned: false }
+  }
+}
+
+// ============================================================================
 // Main Commands
 // ============================================================================
 
@@ -785,6 +816,14 @@ async function install(customModel?: string): Promise<void> {
     const cacheResult = await checkAndCleanOpenCodeCache()
     if (cacheResult.cleaned) {
       logSuccess(cacheResult.message || "Cleaned OpenCode cache")
+    }
+    
+    const legacyResult = await cleanupLegacySkillDir()
+    if (legacyResult.cleaned) {
+      logSuccess(legacyResult.message || "Cleaned legacy skill/ directory")
+    }
+
+    if (cacheResult.cleaned || legacyResult.cleaned) {
       log("")
     }
     

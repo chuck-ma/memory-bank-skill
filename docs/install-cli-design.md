@@ -30,7 +30,7 @@ memory-bank-skill/
 ├── plugin/
 │   └── memory-bank.ts        # OpenCode 插件
 ├── dist/                     # 编译输出（发布时包含）
-├── skill/
+├── skills/
 │   └── memory-bank/          # Skill 文件
 │       ├── SKILL.md
 │       ├── README.md
@@ -75,7 +75,7 @@ memory-bank-skill/
 ### Step 1: 复制 Skill 文件
 
 - **源**: `skill/memory-bank/*`
-- **目标**: `~/.config/opencode/skill/memory-bank/`
+- **目标**: `~/.config/opencode/skills/memory-bank/`
 - **幂等策略**: 覆盖 + 备份（如有差异）
 
 ### Step 2: 配置 opencode.json
@@ -87,7 +87,7 @@ memory-bank-skill/
   3. 移除旧的 `file://.../memory-bank.ts` 引用（如存在）
 - **幂等策略**: 存在则跳过
 
-安装完成后自动写入：`~/.config/opencode/skill/memory-bank/.manifest.json`。
+安装完成后自动写入：`~/.config/opencode/skills/memory-bank/.manifest.json`。
 
 ---
 
@@ -134,7 +134,7 @@ memory-bank-skill/
 ┌─────────────────────────────────────────────────────────┐
 │                    Manifest Phase                        │
 ├─────────────────────────────────────────────────────────┤
-│  写入 ~/.config/opencode/skill/memory-bank/.manifest.json │
+│  写入 ~/.config/opencode/skills/memory-bank/.manifest.json │
 │  {                                                       │
 │    "version": "5.3.2",                                   │
 │    "installedAt": "2026-01-13T10:15:08Z",               │
@@ -229,7 +229,7 @@ function updateAgentsMd(content: string, block: string): string {
 | 情况 | 处理方式 |
 |------|----------|
 | `memory-bank/` 目录修改 | **不触发更新提醒**。Plugin 会检测到 memory-bank 文件变更并标记 `memoryBankUpdated=true`，但不会加入 `modifiedFiles` 列表，避免循环提醒 |
-| `~/.config/opencode/skill/` 不存在 | 自动创建目录 |
+| `~/.config/opencode/skills/` 不存在 | 自动创建目录 |
 | `~/.config/opencode/` 不存在 | 自动创建目录 |
 | `opencode.json` 不存在 | 创建新文件 |
 | `opencode.json` 格式错误 | 中止 + 打印手动修复指令 |
@@ -251,7 +251,7 @@ $ bunx memory-bank-skill install
 Memory Bank Skill Installer v5.5.0
 
 [1/2] Installing skill files...
-→ ~/.config/opencode/skill/memory-bank/
+→ ~/.config/opencode/skills/memory-bank/
 [2/2] Configuring plugin...
       → Added permission.skill = "allow", Added plugin: memory-bank-skill
 
@@ -268,7 +268,7 @@ $ bunx memory-bank-skill install
 Memory Bank Skill Installer v5.5.0
 
 [1/2] Installing skill files...
-      → ~/.config/opencode/skill/memory-bank/
+      → ~/.config/opencode/skills/memory-bank/
 [2/2] Configuring plugin...
       → Already configured
 
@@ -285,7 +285,7 @@ $ bunx memory-bank-skill install
 Memory Bank Skill Installer v5.5.0
 
 [1/2] Installing skill files...
-→ ~/.config/opencode/skill/memory-bank/
+→ ~/.config/opencode/skills/memory-bank/
 [2/2] Configuring plugin...
       ✗ Failed to parse JSON: Unexpected token at line 5
 
