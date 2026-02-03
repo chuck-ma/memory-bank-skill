@@ -23,6 +23,13 @@ const DEFAULT_MAX_CHARS = 12_000
 // block: block high-risk writes if context not read
 type GatingMode = "off" | "warn" | "block"
 const GATING_MODE: GatingMode = (process.env.MEMORY_BANK_GUARD_MODE as GatingMode) || "warn"
+
+// Doc-First Gate configuration (REQ-005)
+// off: no doc-first reminder (default)
+// warn: suggest writing MB doc before code (doesn't block)
+// block: require writing MB doc before code
+type DocFirstMode = "off" | "warn" | "block"
+const DOC_FIRST_MODE: DocFirstMode = (process.env.MEMORY_BANK_DOC_FIRST_MODE as DocFirstMode) || "off"
 const TRUNCATION_NOTICE =
   "\n\n---\n\n[TRUNCATED] Memory Bank context exceeded size limit. Read files directly for complete content."
 
@@ -70,6 +77,7 @@ interface SessionMeta {
   lastUserMessageDigest?: string
   lastUserMessageAt?: number
   lastUserMessageKey?: string
+  pendingDocFirstSatisfied: boolean
 }
 
 interface MemoryBankContextResult {
@@ -83,6 +91,8 @@ interface MessageGatingState {
   readFiles: Set<string>
   contextSatisfied: boolean
   warnedThisMessage: boolean
+  docFirstSatisfied: boolean
+  docFirstWarned: boolean
 }
 
 // ============================================================================
@@ -419,7 +429,7 @@ async function checkMemoryBankExists(
 function getSessionMeta(sessionId: string, fallbackRoot: string): SessionMeta {
   let meta = sessionMetas.get(sessionId)
   if (!meta) {
-    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0 }
+    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0, pendingDocFirstSatisfied: false }
     sessionMetas.set(sessionId, meta)
   }
   return meta
@@ -483,14 +493,28 @@ const EXCLUDED_DIRS = [
 
 const MEMORY_BANK_PATTERN = /^memory-bank\//
 
+// Doc-First Gate: code-only file patterns (REQ-005)
+const DOC_FIRST_FILE_PATTERNS = [
+  /\.py$/, /\.ts$/, /\.tsx$/, /\.js$/, /\.jsx$/,
+  /\.go$/, /\.rs$/, /\.vue$/, /\.svelte$/,
+]
+
 function isDisabled(): boolean {
   return process.env.MEMORY_BANK_DISABLED === "1" || process.env.MEMORY_BANK_DISABLED === "true"
 }
 
-function getMessageGatingState(gatingKey: string): MessageGatingState {
+function getMessageGatingState(gatingKey: string, sessionId?: string, projectRoot?: string): MessageGatingState {
   let state = messageGatingStates.get(gatingKey)
   if (!state) {
-    state = { readFiles: new Set(), contextSatisfied: false, warnedThisMessage: false }
+    let inheritDocFirst = false
+    if (sessionId && projectRoot) {
+      const meta = sessionMetas.get(sessionId)
+      if (meta?.pendingDocFirstSatisfied) {
+        inheritDocFirst = true
+        meta.pendingDocFirstSatisfied = false
+      }
+    }
+    state = { readFiles: new Set(), contextSatisfied: false, warnedThisMessage: false, docFirstSatisfied: inheritDocFirst, docFirstWarned: false }
     messageGatingStates.set(gatingKey, state)
     if (messageGatingStates.size > 100) {
       const first = messageGatingStates.keys().next().value
@@ -1118,7 +1142,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
 
         if (event.type === "session.created") {
-          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0 })
+          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0, pendingDocFirstSatisfied: false })
           
           const parentID = info?.parentID
           sessionsById.set(sessionId, { parentID })
@@ -1421,7 +1445,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         const meta = getSessionMeta(sessionID, projectRoot)
         const messageKey = meta.lastUserMessageKey || "default"
         const gatingKey = `${sessionID}::${messageKey}`
-        const gatingState = getMessageGatingState(gatingKey)
+        const gatingState = getMessageGatingState(gatingKey, sessionID, projectRoot)
         const toolLower = tool.toLowerCase()
         
         const readTools = ["read"]
@@ -1526,6 +1550,85 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
       }
 
+      // ==== Doc-First Gate (REQ-005) ====
+      if (DOC_FIRST_MODE !== "off") {
+        const dfMeta = getSessionMeta(sessionID, projectRoot)
+        const dfMessageKey = dfMeta.lastUserMessageKey || "default"
+        const dfGatingKey = `${sessionID}::${dfMessageKey}`
+        const dfState = getMessageGatingState(dfGatingKey, sessionID, projectRoot)
+        const dfToolLower = tool.toLowerCase()
+
+        const dfWriteTools = ["write", "edit", "multiedit", "apply_patch", "patch"]
+        if (dfWriteTools.includes(dfToolLower) && !dfState.docFirstSatisfied && !dfState.docFirstWarned) {
+          const dfTargetPaths = extractWritePaths(dfToolLower, output.args || {})
+          const mbCheckResults = await Promise.all(dfTargetPaths.map(p => isMemoryBankPath(p)))
+          const hasCodeFile = dfTargetPaths.some((p, i) => {
+            if (mbCheckResults[i]) return false
+            return DOC_FIRST_FILE_PATTERNS.some(pat => pat.test(p.toLowerCase()))
+          })
+
+          if (hasCodeFile && !dfState.warnedThisMessage) {
+            if (DOC_FIRST_MODE === "block") {
+              log.warn("Doc-First Gate: code write blocked (no MB doc written)", {
+                sessionID, gatingKey: dfGatingKey, tool, targetPaths: dfTargetPaths,
+              })
+              throw new Error(
+                `[Doc-First Gate] 请先沉淀工作文档再写代码。\n\n` +
+                `请用 MemoryWriter 先记录你要做什么：\n` +
+                `• 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md\n` +
+                `• 新功能 / 需求 → requirements/REQ-xxx.md\n` +
+                `• 重构 / 优化 → design/design-xxx.md\n` +
+                `• 简单变更 → 追加到 progress.md\n\n` +
+                `调用方式: proxy_task({ subagent_type: "memory-bank-writer", ... })\n` +
+                `写完文档后再执行代码修改。`
+              )
+            } else {
+              dfState.docFirstWarned = true
+              log.info("Doc-First Gate: warning issued", {
+                sessionID, gatingKey: dfGatingKey, tool, targetPaths: dfTargetPaths,
+              })
+              client.session.prompt({
+                path: { id: sessionID },
+                body: {
+                  noReply: true,
+                  variant: PLUGIN_PROMPT_VARIANT,
+                  parts: [{
+                    type: "text",
+                    text: `## ⚠️ [Doc-First] 建议先沉淀工作文档再写代码\n\n` +
+                      `请用 MemoryWriter 先记录你要做什么，并作为第一优先级 todo：\n` +
+                      `• 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md\n` +
+                      `• 新功能 / 需求 → requirements/REQ-xxx.md\n` +
+                      `• 重构 / 优化 → design/design-xxx.md\n` +
+                      `• 简单变更 → 追加到 progress.md\n\n` +
+                      `调用方式: \`proxy_task({ subagent_type: "memory-bank-writer", ... })\``
+                  }]
+                }
+              }).catch(err => log.error("Failed to send doc-first warning:", String(err)))
+            }
+          }
+        }
+      }
+      // ==== End Doc-First Gate ====
+
+      const markParentDocFirstSatisfied = (writerSessionID: string): void => {
+        const parentID = sessionsById.get(writerSessionID)?.parentID
+        if (!parentID) return
+        const parentMeta = getSessionMeta(parentID, projectRoot)
+        const parentMsgKey = parentMeta.lastUserMessageKey
+        if (parentMsgKey) {
+          const parentGatingKey = `${parentID}::${parentMsgKey}`
+          const parentGating = getMessageGatingState(parentGatingKey, parentID, projectRoot)
+          parentGating.docFirstSatisfied = true
+          log.debug("Doc-First: parent satisfied via writer write", { writerSessionID, parentID, parentGatingKey })
+        }
+        const defaultGatingKey = `${parentID}::default`
+        const defaultState = messageGatingStates.get(defaultGatingKey)
+        if (defaultState) {
+          defaultState.docFirstSatisfied = true
+        }
+        parentMeta.pendingDocFirstSatisfied = true
+      }
+
       const isWriterAllowed = (sid: string): boolean => {
         if (writerSessionIDs.has(sid)) return true
         
@@ -1605,6 +1708,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
           if (isWriterAllowed(sessionID)) {
             log.debug("Writer agent write allowed", { sessionID, tool, targetPath })
+            markParentDocFirstSatisfied(sessionID)
             return
           }
 
@@ -1737,6 +1841,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             if (await isMemoryBankPath(resolvedTarget)) {
               if (isWriterAllowed(sessionID)) {
                 log.debug("Writer agent bash redirect allowed", { sessionID, command: command.slice(0, 100) })
+                markParentDocFirstSatisfied(sessionID)
                 return
               }
               blockWrite("bash redirect to memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
@@ -1755,6 +1860,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
                 if (await isMemoryBankPath(resolved)) {
                   if (isWriterAllowed(sessionID)) {
                     log.debug("Writer agent find with dangerous flags allowed", { sessionID })
+                    markParentDocFirstSatisfied(sessionID)
                     return
                   }
                   blockWrite("find with dangerous flags on memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
@@ -1775,6 +1881,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             if (await isMemoryBankPath(resolved)) {
               if (isWriterAllowed(sessionID)) {
                 log.debug("Writer agent bash write allowed", { sessionID, command: command.slice(0, 100) })
+                markParentDocFirstSatisfied(sessionID)
                 return
               }
               blockWrite("bash write to memory-bank", { command: command.slice(0, 200), pathArg, resolved })
