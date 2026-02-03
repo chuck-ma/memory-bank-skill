@@ -1092,17 +1092,21 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         const anchorState = getSessionAnchorState(sessionID)
         const tracked = buildRequiredAnchors(anchorState.anchorsLRU)
         const validPaths = await validateAnchorPaths(tracked, projectRoot)
-        if (validPaths.length > 0) {
+        // FIX: Canonicalize paths for consistent comparison (macOS/Windows lowercase)
+        const canonicalPaths = validPaths
+          .map(p => canonicalizeRelPath(p, projectRoot))
+          .filter((p): p is string => p !== "")
+        if (canonicalPaths.length > 0) {
           anchorState.recovery = {
             required: true,
-            anchorPaths: validPaths,
+            anchorPaths: canonicalPaths,
             readFiles: new Set(),
             activatedAt: Date.now(),
           }
           anchorState.compactionCount++
           log.info("[HOOK] session.compacting recovery set", {
             sessionID,
-            anchorPaths: validPaths,
+            anchorPaths: canonicalPaths,
             compactionCount: anchorState.compactionCount,
             elapsed: Date.now() - hookStart,
           })
