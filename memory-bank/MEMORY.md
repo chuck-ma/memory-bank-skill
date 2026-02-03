@@ -18,8 +18,8 @@
   - [x] REQ-004: v7.0 → v7.1 模板升级路径
   - [x] Session Anchors v3 设计（经 Oracle 3 轮对抗，已收敛）
   - [x] OpenCode 插件 Hook 知识整理
-  - [ ] Session Anchors v3 实现（~200 行代码）
-  - [ ] 向用户汇报最终结果
+  - [x] Session Anchors v3 实现（~200 行代码）
+  - [x] 向用户汇报最终结果
 - **阻塞项**: 无
 
 ## Decision Highlights (Still Binding)
