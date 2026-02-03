@@ -1,9 +1,10 @@
 # REQ-005: 文档先行机制 (Doc-First Gate)
 
 > 创建于: 2026-02-03
-> 状态: **Design Finalized (Oracle 3 轮对抗，已收敛)**
+> 状态: **Design Finalized (Oracle 3 轮对抗 + dogfood 反馈，已收敛)**
 > 优先级: P1
 > Oracle 审查: 2026-02-03，3 轮对抗
+> 更新: 2026-02-03，dogfood 发现默认 off 导致 Gate 形同虚设，改为默认 warn + 前置存在检查
 
 ## 核心理念
 
@@ -75,7 +76,7 @@ const DOC_FIRST_FILE_PATTERNS = [
 
 **共识**：
 - ✅ 新增环境变量 `MEMORY_BANK_DOC_FIRST_MODE`
-- 可选值：`off`（默认）| `warn` | `block`
+- 可选值：`off` | `warn`（**默认**）| `block`
 - 独立于 `MEMORY_BANK_GUARD_MODE`，互不干扰
 
 ### 共识 4. Gate 顺序与防冲突
@@ -103,6 +104,17 @@ tool.execute.before:
 - **Bash 写入绕过**：`sed -i`, `echo >`, generators 等通过 bash 的写操作不触发 Doc-First
 - **写入成功确认**：`tool.execute.before` 无法确认写入是否真正成功，接受"被允许的写入"语义
 
+### 共识 6. 前置检查：memory-bank 存在性（dogfood 反馈）
+
+**问题**：默认 `off` 时 Doc-First Gate 形同虚设，改为 `warn` 后对没有 memory-bank 的项目会"提醒了但没法满足"。
+
+**共识**：
+- ✅ Doc-First Gate 触发前，先检查 `memory-bank/` 目录是否存在
+- **不存在** → 不发 Doc-First 提醒，改为发"建议初始化 Memory Bank"提醒（复用 `initReminderFired`，session 内只提醒一次）
+- **存在** → 正常走 Doc-First 流程
+- 提醒内容：`"项目尚未启用 Memory Bank，建议运行 /memory-bank-refresh 初始化"`
+- 复用现有 `checkMemoryBankExists()` + `memoryBankExistsCache` 缓存机制（无额外 IO 开销）
+
 ---
 
 ## 需求描述
@@ -111,8 +123,8 @@ tool.execute.before:
 
 | DOC_FIRST_MODE | 行为 |
 |----------------|------|
-| `off` | 不提醒（**默认**） |
-| `warn` | 写代码文件时发出 warning，建议先写文档（不阻止） |
+| `off` | 不提醒 |
+| `warn` | 写代码文件时发出 warning，建议先写文档（不阻止）（**默认**） |
 | `block` | 写代码文件时阻止，要求先写文档 |
 
 ### 2. 文档分类
@@ -129,12 +141,14 @@ tool.execute.before:
 **何时触发**：
 - AI 尝试写入匹配 `DOC_FIRST_FILE_PATTERNS` 的文件（代码文件）
 - 且目标路径**不在** `memory-bank/` 下
+- 且 `memory-bank/` 目录存在（前置检查）
 - 且本消息轮次 `docFirstSatisfied = false`
 - 且 `DOC_FIRST_MODE != off`
 - 且 Read Gate 未在本轮发出 warning（`warnedThisMessage = false`，防双重提醒）
 
 **何时跳过**：
-- `DOC_FIRST_MODE = off`（默认）
+- `DOC_FIRST_MODE = off`
+- `memory-bank/` 目录不存在（改为发"建议初始化"提醒，session 内一次）
 - 写入非代码文件
 - 写入 `memory-bank/` 路径
 - 本轮已 satisfied
@@ -150,8 +164,9 @@ AI 调用 write/edit/patch
     ├─ [Read Gate] 上下文检查（已有）
     │       如果 warned → 标记 warnedThisMessage，Doc-First 不再叠加
     │
-    ├─ [Doc-First Gate] ← 新增
+    ├─ [Doc-First Gate] ← 默认启用（warn）
     │   ├─ DOC_FIRST_MODE = off → 跳过
+    │   ├─ memory-bank/ 不存在 → 发"建议初始化"提醒（session 内一次，复用 initReminderFired）→ 跳过
     │   ├─ 目标是 memory-bank/ → 跳过
     │   ├─ 不匹配 DOC_FIRST_FILE_PATTERNS → 跳过
     │   ├─ docFirstSatisfied = true → 跳过
@@ -219,18 +234,20 @@ interface SessionMeta {
 
 ## 验收标准
 
-1. [ ] 新增 `MEMORY_BANK_DOC_FIRST_MODE` 环境变量（off/warn/block，默认 off）
-2. [ ] `DOC_FIRST_MODE=warn`：写代码文件且未写 MB 文档，发出 warning（不阻止）
+1. [ ] 新增 `MEMORY_BANK_DOC_FIRST_MODE` 环境变量（off/warn/block，**默认 warn**）
+2. [ ] `DOC_FIRST_MODE=warn`（默认）：写代码文件且未写 MB 文档，发出 warning（不阻止）
 3. [ ] `DOC_FIRST_MODE=block`：写代码文件且未写 MB 文档，阻止执行
 4. [ ] `DOC_FIRST_MODE=off`：不触发 Doc-First 提醒
-5. [ ] 检测 writer session 的**实际写入**（在 Write Guard 允许后标记）
-6. [ ] 使用独立的 `DOC_FIRST_FILE_PATTERNS`（仅代码文件），不复用 TRACKABLE 或 assessWriteRisk()
-7. [ ] 写 `memory-bank/` 路径时跳过（避免死锁）
-8. [ ] Gate 执行顺序：Recovery → Read → Doc-First → Write Guard
-9. [ ] Read Gate warned 时不叠加 Doc-First warning（防双重提醒）
-10. [ ] 提醒每条用户消息最多一次（`docFirstWarned`）
-11. [ ] 父 session 关联兜底：`pendingDocFirstSatisfied` 处理竞态
-12. [ ] 独立于 `MEMORY_BANK_GUARD_MODE`
+5. [x] 检测 writer session 的**实际写入**（在 Write Guard 允许后标记）
+6. [x] 使用独立的 `DOC_FIRST_FILE_PATTERNS`（仅代码文件），不复用 TRACKABLE 或 assessWriteRisk()
+7. [x] 写 `memory-bank/` 路径时跳过（避免死锁）
+8. [x] Gate 执行顺序：Recovery → Read → Doc-First → Write Guard
+9. [x] Read Gate warned 时不叠加 Doc-First warning（防双重提醒）
+10. [x] 提醒每条用户消息最多一次（`docFirstWarned`）
+11. [x] 父 session 关联兜底：`pendingDocFirstSatisfied` 处理竞态
+12. [x] 独立于 `MEMORY_BANK_GUARD_MODE`
+13. [ ] 前置检查 `memory-bank/` 存在性：不存在时发"建议初始化"提醒（session 内一次）
+14. [ ] 复用 `initReminderFired` + `checkMemoryBankExists()` 缓存
 
 ---
 
