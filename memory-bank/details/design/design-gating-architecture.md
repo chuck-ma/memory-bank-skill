@@ -1,7 +1,14 @@
 # v7.0 Gating 架构设计
 
 > 创建于: 2026-02-01
-> 状态: 设计完成，待实现
+> 状态: 已实现（v7.0），部分行为被 v7.1 覆盖（见下方漂移说明）
+>
+> **⚠️ v7.1 漂移说明**：本文档是 v7.0 原始设计。以下行为已被 v7.1 实现覆盖：
+> - **捕获工具**：原设计 read/glob → 实现仅 `read`
+> - **满足条件**：原设计 patterns.md 或 MEMORY.md → 实现仅精确匹配 `memory-bank/details/patterns.md`（case-insensitive）或调用 `memory-reader`
+> - **风险评估**：原设计 multi-file = high → 实现 multi-file = medium, sensitive-path = high
+> - **实现代码**：见 `plugin/memory-bank.ts` 的 `assessWriteRisk()` 和 gating 逻辑
+> - **最新行为规范**：见 `memory-bank/details/patterns.md` v7.1 节
 
 ## 设计背景
 
@@ -85,19 +92,18 @@ const messageStates = new Map<string, MessageState>()
 
 ### 捕获读操作
 
-在 `tool.execute.before` 中，当 AI 调用 read/glob 读取 memory-bank/ 下的文件时，记录下来：
+在 `tool.execute.before` 中，当 AI 调用 read 读取 memory-bank/ 下的文件时，记录下来：
 
 ```typescript
 // 捕获读操作
-if (tool === "read" || tool === "glob") {
+if (tool === "read") { // v7.0 原设计：read/glob；v7.1 实现：仅 read
   const targetPath = output.args?.filePath || output.args?.path
   if (isMemoryBankPath(targetPath)) {
     const state = getMessageState(messageKey)
     state.readFiles.add(targetPath)
     
-    // 检查是否满足最低要求
-    if (state.readFiles.has("memory-bank/details/patterns.md") ||
-        state.readFiles.has("memory-bank/MEMORY.md")) {
+    // v7.1 实现：仅精确匹配 patterns.md（case-insensitive）
+    if (targetPath.toLowerCase() === "memory-bank/details/patterns.md") {
       state.contextSatisfied = true
     }
   }
@@ -117,10 +123,11 @@ if (writeTools.includes(tool.toLowerCase())) {
   if (!state.contextSatisfied) {
     if (riskLevel === "high") {
       // 高风险：直接阻止
+      // v7.1: 仅建议 patterns.md，不再建议 MEMORY.md
       throw new Error(
         `[Memory Bank Gating] 检测到高风险写操作，但本轮未读取项目上下文。\n` +
-        `请先执行: read('memory-bank/details/patterns.md')\n` +
-        `或执行: read('memory-bank/MEMORY.md')`
+        `请先执行: read({ filePath: "memory-bank/details/patterns.md" })\n` +
+        `或调用: proxy_task({ subagent_type: "memory-reader", ... })`
       )
     } else if (guardMode === "warn") {
       // 低风险 + warn 模式：只记录警告，不阻止
@@ -133,13 +140,19 @@ if (writeTools.includes(tool.toLowerCase())) {
 ### 风险评估
 
 ```typescript
+// v7.0 原设计（下方代码）。v7.1 实现已修改，见 plugin/memory-bank.ts assessWriteRisk()
 function assessRisk(tool: string, args: any): "high" | "medium" | "low" {
-  // 多文件写 = 高风险
-  if (tool === "multiedit") return "high"
-  if (tool === "apply_patch" && countPatchFiles(args.patch) > 1) return "high"
+  const targetPath = args.filePath || args.path || ""
+  
+  // 安全路径 = 低风险（v7.1 新增）
+  const safePatterns = [/\.md$/, /\.txt$/, /\.json$/]
+  if (safePatterns.some(p => p.test(targetPath))) return "low"
+  
+  // 多文件写 = 中风险（v7.0 原设计为 high，v7.1 降级为 medium）
+  if (tool === "multiedit") return "medium"
+  if (tool === "apply_patch" && countPatchFiles(args.patch) > 1) return "medium"
   
   // 敏感路径 = 高风险
-  const targetPath = args.filePath || args.path || ""
   const sensitivePatterns = [
     /^src\/auth\//,
     /^src\/security\//,
@@ -147,11 +160,12 @@ function assessRisk(tool: string, args: any): "high" | "medium" | "low" {
     /tsconfig\.json$/,
     /docker\//,
     /infra\//,
+    /\/plugin\/.*\.ts$/,  // v7.1 新增：插件源码
   ]
   if (sensitivePatterns.some(p => p.test(targetPath))) return "high"
   
-  // 单文件普通修改 = 低风险
-  return "low"
+  // 单文件普通修改 = 中风险（v7.1：非安全路径默认 medium）
+  return "medium"
 }
 ```
 
@@ -167,7 +181,7 @@ AI 调用: edit({ filePath: "src/store/index.ts", ... })
 
 Plugin: ❌ 阻止！
    "检测到高风险写操作，但本轮未读取项目上下文。
-    请先执行: read('memory-bank/details/patterns.md')"
+    请先执行: read({ filePath: "memory-bank/details/patterns.md" })"
 
 AI: 好的，我先读取上下文
 AI 调用: read({ filePath: "memory-bank/details/patterns.md" })
@@ -200,7 +214,9 @@ MEMORY_BANK_GUARD_MODE=warn  # 默认档；仅提醒，不拦截
 MEMORY_BANK_GUARD_MODE=block # 仅对高风险写拦截
 ```
 
-**启用条件**：memory-bank/ 目录不存在时不启用 gating。
+**启用条件**：由 `MEMORY_BANK_GUARD_MODE` 环境变量控制（off/warn/block），默认 warn。不检查 memory-bank/ 目录是否存在。
+
+> **注意**：v7.1 实现中，warn 模式也会对 medium 风险发出用户可见警告（不仅限于 high）。详见 `plugin/memory-bank.ts` 和 `memory-bank/details/patterns.md`。
 
 ## 与 prompt 规则的对比
 
@@ -248,3 +264,5 @@ Oracle 在讨论中强调：Writer 不是为了"写 Markdown 更方便"，而是
 
 **一句话总结**：
 > "在任何写工具执行前，如果本轮没读过 memory-reader 且写入风险高，则阻止写入并给出唯一下一步。"
+>
+> **v7.1 更正**：满足条件已收紧为"读过 `memory-bank/details/patterns.md`（精确路径）或调用了 `memory-reader`"。
