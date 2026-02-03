@@ -85,6 +85,23 @@ interface MessageGatingState {
   warnedThisMessage: boolean
 }
 
+// ============================================================================
+// Session Anchors v3 + Recovery Gate Types
+// ============================================================================
+
+interface RecoveryState {
+  required: true
+  anchorPaths: string[]         // Validated paths at compaction time
+  readFiles: Set<string>        // Files read since recovery started
+  activatedAt: number
+}
+
+interface SessionAnchorState {
+  anchorsLRU: string[]          // Recently read anchor files (LRU, cap 5)
+  recovery: RecoveryState | null
+  compactionCount: number
+}
+
 type LogLevel = "debug" | "info" | "warn" | "error"
 type CacheEntry = { mtimeMs: number; text: string }
 
@@ -103,6 +120,7 @@ const writerSessionIDs = new Set<string>()
 const agentBySessionID = new Map<string, string>()
 
 const messageGatingStates = new Map<string, MessageGatingState>()
+const sessionAnchorStates = new Map<string, SessionAnchorState>()
 
 // ============================================================================
 // Utilities
@@ -480,6 +498,104 @@ function getMessageGatingState(gatingKey: string): MessageGatingState {
     }
   }
   return state
+}
+
+// Session Anchors v3: path canonicalization, anchor management, recovery
+const ANCHOR_PATH_PATTERNS = [
+  /^memory-bank\/details\/requirements\//,
+  /^memory-bank\/details\/design\//,
+  /^memory-bank\/details\/progress\.md$/,
+]
+const MAX_ANCHORS = 5
+const ANCHOR_SENTINEL = "<memory-bank-anchors>"
+const ANCHOR_SENTINEL_CLOSE = "</memory-bank-anchors>"
+const FALLBACK_ANCHORS = [
+  "memory-bank/MEMORY.md",
+  "memory-bank/details/patterns.md",
+]
+
+function canonicalizeRelPath(rawPath: string, projectRoot: string): string {
+  const abs = path.isAbsolute(rawPath) ? rawPath : path.resolve(projectRoot, rawPath)
+  const rel = path.relative(projectRoot, abs)
+  if (rel.startsWith("..")) return ""
+  const posix = rel.replace(/\\/g, "/")
+  return (process.platform === "darwin" || process.platform === "win32")
+    ? posix.toLowerCase()
+    : posix
+}
+
+function isAnchorPath(canonicalPath: string): boolean {
+  return ANCHOR_PATH_PATTERNS.some(p => p.test(canonicalPath))
+}
+
+function updateAnchorLRU(lru: string[], canonicalPath: string): void {
+  const idx = lru.indexOf(canonicalPath)
+  if (idx !== -1) lru.splice(idx, 1)
+  lru.push(canonicalPath)
+  while (lru.length > MAX_ANCHORS) lru.shift()
+}
+
+function getSessionAnchorState(sessionID: string): SessionAnchorState {
+  let state = sessionAnchorStates.get(sessionID)
+  if (!state) {
+    state = { anchorsLRU: [], recovery: null, compactionCount: 0 }
+    sessionAnchorStates.set(sessionID, state)
+  }
+  return state
+}
+
+async function validateAnchorPaths(paths: string[], projectRoot: string): Promise<string[]> {
+  const validated: string[] = []
+  for (const p of paths) {
+    try {
+      await access(path.join(projectRoot, p))
+      validated.push(p)
+    } catch {
+      // file doesn't exist, skip
+    }
+  }
+  return validated
+}
+
+function buildRequiredAnchors(anchorsLRU: string[]): string[] {
+  const required = new Set(FALLBACK_ANCHORS)
+  for (const p of anchorsLRU) {
+    required.add(p)
+    if (required.size >= MAX_ANCHORS) break
+  }
+  return [...required]
+}
+
+async function buildAnchorBlock(sessionID: string, projectRoot: string): Promise<string | null> {
+  const state = getSessionAnchorState(sessionID)
+  const tracked = buildRequiredAnchors(state.anchorsLRU)
+  const validated = await validateAnchorPaths(tracked, projectRoot)
+  if (validated.length === 0) return null
+
+  let miniSCR = ""
+  try {
+    const entryContent = await readTextCached(path.join(projectRoot, MEMORY_BANK_ENTRY))
+    if (entryContent) {
+      const focusMatch = entryContent.match(/## Current Focus\n([\s\S]*?)(?=\n## |$)/)
+      if (focusMatch) {
+        const lines = focusMatch[1].trim().split("\n").slice(0, 6)
+        miniSCR = `\nSession state (from MEMORY.md):\n${lines.join("\n")}\n`
+      }
+    }
+  } catch {
+    // best effort
+  }
+
+  const count = state.compactionCount + 1
+  return (
+    `${ANCHOR_SENTINEL}\n` +
+    `## POST-COMPACTION RECOVERY (Compaction #${count})\n\n` +
+    `Compaction occurred. Before medium/high-risk writes, you MUST read:\n` +
+    validated.map(p => `- ${p}`).join("\n") + "\n" +
+    miniSCR +
+    `\nRecovery Gate blocks medium/high-risk writes until anchor files are read.\n` +
+    `${ANCHOR_SENTINEL_CLOSE}`
+  )
 }
 
 function extractWritePaths(toolName: string, args: Record<string, unknown>): string[] {
@@ -916,34 +1032,59 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       }
     },
 
-    "experimental.session.compacting": async (_input, output) => {
+    "experimental.session.compacting": async (input, output) => {
       const hookStart = Date.now()
-      log.info("[HOOK] session.compacting START")
+      const { sessionID } = input
+      log.info("[HOOK] session.compacting START", { sessionID })
       try {
-        if (output.context.some((s) => s.includes(SENTINEL_OPEN))) {
-          log.info("[HOOK] session.compacting SKIP (sentinel exists)", { elapsed: Date.now() - hookStart })
-          return
+        if (!output.context.some((s) => s.includes(SENTINEL_OPEN))) {
+          log.info("[HOOK] session.compacting building context...")
+          const ctx = await buildMemoryBankContext(projectRoot)
+          log.info("[HOOK] session.compacting context built", { hasCtx: !!ctx, elapsed: Date.now() - hookStart })
+          
+          if (ctx) {
+            output.context.push(ctx)
+          } else {
+            const initInstruction =
+              `${SENTINEL_OPEN}\n` +
+              `# Memory Bank 未启用\n\n` +
+              `项目 \`${path.basename(projectRoot)}\` 尚未启用 Memory Bank。\n\n` +
+              `可选：如需启用项目记忆，运行 \`/memory-bank-refresh\`。\n` +
+              `${SENTINEL_CLOSE}`
+            output.context.push(initInstruction)
+            log.info("[HOOK] session.compacting DONE (init pushed, no anchors)", { elapsed: Date.now() - hookStart })
+            return
+          }
         }
 
-        log.info("[HOOK] session.compacting building context...")
-        const ctx = await buildMemoryBankContext(projectRoot)
-        log.info("[HOOK] session.compacting context built", { hasCtx: !!ctx, elapsed: Date.now() - hookStart })
-        
-        if (ctx) {
-          output.context.push(ctx)
-          log.info("[HOOK] session.compacting DONE (ctx pushed)", { elapsed: Date.now() - hookStart })
-          return
+        if (!output.context.some((s) => s.includes(ANCHOR_SENTINEL))) {
+          const anchorBlock = await buildAnchorBlock(sessionID, projectRoot)
+          if (anchorBlock) {
+            output.context.push(anchorBlock)
+            log.info("[HOOK] session.compacting anchor block injected", { sessionID, elapsed: Date.now() - hookStart })
+          }
         }
 
-        // No memory-bank exists - inject init instruction
-        const initInstruction =
-          `${SENTINEL_OPEN}\n` +
-          `# Memory Bank 未启用\n\n` +
-          `项目 \`${path.basename(projectRoot)}\` 尚未启用 Memory Bank。\n\n` +
-          `可选：如需启用项目记忆，运行 \`/memory-bank-refresh\`。\n` +
-          `${SENTINEL_CLOSE}`
-        output.context.push(initInstruction)
-        log.info("[HOOK] session.compacting DONE (init pushed)", { elapsed: Date.now() - hookStart })
+        const anchorState = getSessionAnchorState(sessionID)
+        const tracked = buildRequiredAnchors(anchorState.anchorsLRU)
+        const validPaths = await validateAnchorPaths(tracked, projectRoot)
+        if (validPaths.length > 0) {
+          anchorState.recovery = {
+            required: true,
+            anchorPaths: validPaths,
+            readFiles: new Set(),
+            activatedAt: Date.now(),
+          }
+          anchorState.compactionCount++
+          log.info("[HOOK] session.compacting recovery set", {
+            sessionID,
+            anchorPaths: validPaths,
+            compactionCount: anchorState.compactionCount,
+            elapsed: Date.now() - hookStart,
+          })
+        }
+
+        log.info("[HOOK] session.compacting DONE", { elapsed: Date.now() - hookStart })
       } catch (err) {
         log.error("[HOOK] session.compacting ERROR", String(err), { elapsed: Date.now() - hookStart })
       }
@@ -995,6 +1136,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           sessionsById.delete(sessionId)
           writerSessionIDs.delete(sessionId)
           agentBySessionID.delete(sessionId)
+          sessionAnchorStates.delete(sessionId)
           log.info("Session deleted", { sessionId })
         }
 
@@ -1119,7 +1261,102 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
 
     "tool.execute.before": async (input, output) => {
       const { tool, sessionID } = input
-      
+      const toolLowerForRecovery = tool.toLowerCase()
+
+      // ==== Session Anchors v3: Recovery Gate + Anchor Tracking ====
+      const anchorState = getSessionAnchorState(sessionID)
+      const recovery = anchorState.recovery
+
+      if (recovery?.required) {
+        const readToolsForRecovery = ["read"]
+        if (readToolsForRecovery.includes(toolLowerForRecovery)) {
+          const targetPath = (output.args?.filePath || output.args?.path) as string | undefined
+          if (targetPath) {
+            const canonical = canonicalizeRelPath(targetPath, projectRoot)
+            if (canonical && recovery.anchorPaths.includes(canonical)) {
+              recovery.readFiles.add(canonical)
+              const allRead = recovery.anchorPaths.every(p => recovery.readFiles.has(p))
+              if (allRead) {
+                anchorState.recovery = null
+                log.info("Recovery Gate: cleared (all anchors read)", { sessionID, readFiles: [...recovery.readFiles] })
+              }
+            }
+          }
+        }
+
+        if (toolLowerForRecovery === "proxy_task") {
+          const subagentType = (output.args?.subagent_type) as string | undefined
+          if (subagentType === "memory-reader") {
+            anchorState.recovery = null
+            log.info("Recovery Gate: cleared (memory-reader called)", { sessionID })
+          }
+        }
+
+        if (anchorState.recovery?.required) {
+          const writeToolsForRecovery = ["write", "edit", "multiedit", "apply_patch", "patch"]
+          const isWriteTool = writeToolsForRecovery.includes(toolLowerForRecovery)
+          const isBashWrite = toolLowerForRecovery === "bash" && (() => {
+            const cmd = (output.args?.command as string) || ""
+            const bashWritePatterns = [
+              /(?<![0-9&])>(?![&>])\s*\S/,
+              /(?<![0-9&])>>\s*\S/,
+              /\|\s*tee\s/,
+              /\bsed\s+(-[^-]*)?-i/,
+              /\bperl\s+(-[^-]*)?-[pi]/,
+            ]
+            return bashWritePatterns.some(p => p.test(cmd))
+          })()
+
+          if (isWriteTool || isBashWrite) {
+            const riskLevel = isWriteTool
+              ? assessWriteRisk(toolLowerForRecovery, output.args || {}, projectRoot)
+              : "medium" as RiskLevel
+            if (riskLevel !== "low") {
+              // Only validate anchor paths when about to block (performance optimization)
+              const validAnchors = await validateAnchorPaths(recovery.anchorPaths, projectRoot)
+              if (validAnchors.length === 0) {
+                anchorState.recovery = null
+                log.info("Recovery Gate: cleared (all anchor files removed)", { sessionID })
+              } else if (validAnchors.length !== recovery.anchorPaths.length) {
+                recovery.anchorPaths = validAnchors
+                const allRead = validAnchors.every(p => recovery.readFiles.has(p))
+                if (allRead) {
+                  anchorState.recovery = null
+                  log.info("Recovery Gate: cleared (remaining anchors all read)", { sessionID })
+                }
+              }
+              // Re-check after validation - only block if still in recovery
+              if (anchorState.recovery?.required) {
+                log.warn("Recovery Gate: write blocked", {
+                  sessionID, tool, riskLevel,
+                  anchorPaths: recovery.anchorPaths,
+                })
+                throw new Error(
+                  `[Recovery Gate] Compaction detected. Before proceeding, read these anchor files:\n` +
+                  recovery.anchorPaths.map(p => `  read({ filePath: "${p}" })`).join("\n") +
+                  `\nOr call: proxy_task({ subagent_type: "memory-reader", ... })`
+                )
+              }
+            }
+          }
+        }
+      }
+
+      if (!recovery?.required) {
+        const readToolsForAnchors = ["read"]
+        if (readToolsForAnchors.includes(toolLowerForRecovery)) {
+          const targetPath = (output.args?.filePath || output.args?.path) as string | undefined
+          if (targetPath) {
+            const canonical = canonicalizeRelPath(targetPath, projectRoot)
+            if (canonical && isAnchorPath(canonical)) {
+              updateAnchorLRU(anchorState.anchorsLRU, canonical)
+              log.debug("Anchor tracked", { sessionID, path: canonical, lru: anchorState.anchorsLRU })
+            }
+          }
+        }
+      }
+      // ==== End Session Anchors v3 ====
+
       const isCaseInsensitiveFS = process.platform === "darwin" || process.platform === "win32"
       const normalize = (p: string) => isCaseInsensitiveFS ? p.toLowerCase() : p
       
@@ -1189,7 +1426,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         
         const readTools = ["read"]
         if (readTools.includes(toolLower)) {
-          const targetPath = (output.args?.filePath || output.args?.path || output.args?.pattern) as string | undefined
+          const targetPath = (output.args?.filePath || output.args?.path) as string | undefined
           if (targetPath && (await isMemoryBankPath(targetPath))) {
             gatingState.readFiles.add(targetPath)
             const relativePath = targetPath.replace(projectRoot, "").replace(/^\//, "")
