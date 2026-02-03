@@ -362,6 +362,18 @@ function assessRisk(tool, args): "high" | "medium" | "low" {
 
 **详细设计**：见 [design-index-first-architecture.md](design/design-index-first-architecture.md)
 
+## OpenCode 插件 Hook 知识（2026-02-03）
+
+| Hook | sessionID | 用途 |
+|------|-----------|------|
+| `experimental.session.compacting` | 必有 | 压缩时注入上下文 |
+| `experimental.chat.system.transform` | 可选 | 每次 LLM 调用前修改 system prompt |
+| `tool.execute.before` | 必有 | 工具执行前拦截/追踪 |
+
+**关键**: `compacting` 有 sessionID，可直接用于 Session Anchors 实现。
+
+**详细信息**：见 [2026-02-03-opencode-plugin-hooks.md](learnings/2026-02-03-opencode-plugin-hooks.md)
+
 <!-- MACHINE_BLOCK_END -->
 
 <!-- USER_BLOCK_START -->
