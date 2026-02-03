@@ -297,26 +297,30 @@ async function buildMemoryBankContextWithMeta(projectRoot: string): Promise<Memo
       behaviorProtocol = `
 ## Memory Bank Protocol
 protocol_version: memory-bank/v1
+template_version: v7.1
 fingerprint: MEMORY.md | ${totalChars.toLocaleString()} chars | mtime ${mtimeISO} | hash ${contentHash}${truncated ? " | TRUNCATED" : ""}
+
 trigger: (handled by Sisyphus keyTrigger)
-skip: 通用问题 / 简单追问 / 用户说"不需要上下文"
-invoke: proxy_task(subagent_type="memory-reader", prompt="用户问题:{q}\\n按路由读details/,输出YAML")
-output: 单个 YAML 块，含 evidence + conflicts；禁读 .env/*secret*/*.pem/*.key；最多 10 文件
-conflict: 发现冲突 → 报告用户并等待确认，确认后再调用 write
-write: proxy_task(subagent_type="memory-bank-writer", prompt="Target:...\\nDraft:...")；禁止直接写 memory-bank/
+drill_down: Step1 direct-read 1-3 details/*; Step2 需要证据/冲突/跨文件 → memory-reader
+output: 回答必须给引用指针
+gating: 高风险写前需已读 patterns.md 或调用过 memory-reader
+
+write: proxy_task(subagent_type="memory-bank-writer", prompt="Target:...\\nDraft:...")
 more: 完整规范见 /memory-bank skill
 `
     } else {
       behaviorProtocol = `
 ## Memory Bank Protocol
 protocol_version: memory-bank/v1
+template_version: v7.1
 fingerprint: MEMORY.md | ${totalChars.toLocaleString()} chars | mtime ${mtimeISO} | hash ${contentHash}${truncated ? " | TRUNCATED" : ""}
-trigger: 涉及项目背景 / 问"为什么这样做" / 特定模块实现
-skip: 通用问题 / 简单追问 / 用户说"不需要上下文"
-invoke: proxy_task(subagent_type="memory-reader", prompt="用户问题:{q}\\n按路由读details/,输出YAML")
-output: 单个 YAML 块，含 evidence + conflicts；禁读 .env/*secret*/*.pem/*.key；最多 10 文件
-conflict: 发现冲突 → 报告用户并等待确认，确认后再调用 write
-write: proxy_task(subagent_type="memory-bank-writer", prompt="Target:...\\nDraft:...")；禁止直接写 memory-bank/
+
+trigger: 涉及项目实现/设计/历史原因
+drill_down: Step1 direct-read 1-3 details/*; Step2 需要证据/冲突/跨文件 → memory-reader
+output: 回答必须给引用指针
+gating: 高风险写前需已读 patterns.md 或调用过 memory-reader
+
+write: proxy_task(subagent_type="memory-bank-writer", prompt="Target:...\\nDraft:...")
 more: 完整规范见 /memory-bank skill
 `
     }
@@ -503,7 +507,7 @@ function extractWritePaths(toolName: string, args: Record<string, unknown>): str
       for (const m of patchText.matchAll(/^(?:\+\+\+|---)\s+[ab]\/(.+)$/gm)) {
         if (m[1]) paths.push(m[1])
       }
-      for (const m of patchText.matchAll(/^\*\*\*\s+(?:Add|Update|Delete|Move to)\s+(?:File:\s*)?(.+)$/gm)) {
+      for (const m of patchText.matchAll(/^\*\*\*\s+(?:Add|Update|Delete|Move to:?)\s+(?:File:\s*)?(.+)$/gm)) {
         if (m[1]) paths.push(m[1].trim())
       }
     }
@@ -515,6 +519,13 @@ function extractWritePaths(toolName: string, args: Record<string, unknown>): str
 type RiskLevel = "high" | "medium" | "low"
 
 function assessWriteRisk(toolName: string, args: Record<string, unknown>, projectRoot: string): RiskLevel {
+  const safePatterns = [
+    /^memory-bank\/details\/progress\.md$/i,
+    /^memory-bank\/details\/learnings\//i,
+    /^memory-bank\/details\/requirements\//i,
+    /^memory-bank\/details\/.*\/index\.md$/i,
+  ]
+  
   const sensitivePatterns = [
     /^src\/auth\//i, /^src\/security\//i, /\/auth\//i, /\/security\//i,
     /package\.json$/i, /package-lock\.json$/i, /bun\.lockb$/i, /yarn\.lock$/i, /pnpm-lock\.yaml$/i,
@@ -525,30 +536,28 @@ function assessWriteRisk(toolName: string, args: Record<string, unknown>, projec
     /\.config\.(js|ts|mjs)$/i, /vite\.config/i, /next\.config/i, /eslint\.config/i,
     /migrations\//i, /prisma\/schema\.prisma$/i,
     /nginx\.conf$/i, /oauth/i, /sso/i, /rbac/i,
+    /plugin\/.*\.ts$/i,
   ]
   
-  if (toolName === "multiedit") return "high"
+  const allPaths = extractWritePaths(toolName, args)
+  const relativePaths = allPaths.map(p => {
+    const rel = p.startsWith(projectRoot)
+      ? p.slice(projectRoot.length).replace(/^\//, "")
+      : p
+    return rel.replace(/\\/g, "/")
+  })
   
-  if (toolName === "apply_patch" || toolName === "patch") {
-    const patchText = (args.patchText ?? args.patch ?? args.diff) as string | undefined
-    if (patchText) {
-      const stdFileMatches = patchText.match(/^(?:\+\+\+|---)\s+[ab]\/(.+)$/gm) || []
-      const customFileMatches = patchText.match(/^\*\*\*\s+(?:Add|Update|Delete)\s+File:/gm) || []
-      const totalFiles = stdFileMatches.length / 2 + customFileMatches.length
-      if (totalFiles > 1) return "high"
-    }
+  if (relativePaths.length > 0 && relativePaths.every(p => safePatterns.some(sp => sp.test(p)))) {
+    return "low"
   }
   
-  const pathArgs = ["filePath", "path", "filename", "file", "dest", "destination", "target"]
-  for (const arg of pathArgs) {
-    const val = args[arg]
-    if (typeof val === "string") {
-      const relativePath = val.startsWith(projectRoot) 
-        ? val.slice(projectRoot.length).replace(/^\//, "").replace(/\\/g, "/")
-        : val.replace(/\\/g, "/")
-      if (sensitivePatterns.some(p => p.test(relativePath))) return "high"
-    }
+  if (relativePaths.some(p => sensitivePatterns.some(sp => sp.test(p)))) {
+    return "high"
   }
+  
+  const isMultiFile = (toolName === "multiedit") ||
+    ((toolName === "apply_patch" || toolName === "patch") && relativePaths.length > 1)
+  if (isMultiFile) return "medium"
   
   return "low"
 }
@@ -1178,17 +1187,17 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         const gatingState = getMessageGatingState(gatingKey)
         const toolLower = tool.toLowerCase()
         
-        const readTools = ["read", "glob", "grep"]
+        const readTools = ["read"]
         if (readTools.includes(toolLower)) {
           const targetPath = (output.args?.filePath || output.args?.path || output.args?.pattern) as string | undefined
           if (targetPath && (await isMemoryBankPath(targetPath))) {
             gatingState.readFiles.add(targetPath)
             const relativePath = targetPath.replace(projectRoot, "").replace(/^\//, "")
-            if (relativePath.includes("MEMORY.md") || 
-                relativePath.includes("patterns.md") ||
-                relativePath.includes("details/")) {
+            const normalizedPath = relativePath.replace(/\\/g, "/").replace(/^\//, "").toLowerCase()
+            const isPatterns = normalizedPath === "memory-bank/details/patterns.md"
+            if (isPatterns) {
               gatingState.contextSatisfied = true
-              log.debug("Gating: context satisfied via read", { sessionID, gatingKey, targetPath })
+              log.debug("Gating: context satisfied via patterns.md read", { sessionID, gatingKey, targetPath })
             }
           }
         }
@@ -1215,27 +1224,24 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
               })
               throw new Error(
                 `[Memory Bank Gating] 检测到高风险写操作，但本轮未读取项目上下文。\n` +
-                `请先执行: read({ filePath: "memory-bank/details/patterns.md" })\n` +
-                `或执行: read({ filePath: "memory-bank/MEMORY.md" })`
+                `请先执行: read({ filePath: "memory-bank/details/patterns.md" })`
               )
-            } else if (riskLevel === "high") {
-              log.warn("Gating: high-risk write warning (context not read)", { 
+            } else if ((riskLevel === "high" || riskLevel === "medium") && !gatingState.warnedThisMessage) {
+              gatingState.warnedThisMessage = true
+              log.warn("Gating: write warning (context not read)", { 
                 sessionID, gatingKey, tool, riskLevel, targetPaths 
               })
-              if (!gatingState.warnedThisMessage) {
-                gatingState.warnedThisMessage = true
-                client.session.prompt({
-                  path: { id: sessionID },
-                  body: {
-                    noReply: true,
-                    variant: PLUGIN_PROMPT_VARIANT,
-                    parts: [{
-                      type: "text",
-                      text: `## [Memory Bank Gating Warning]\n\n检测到高风险写操作，但本轮未读取项目上下文。\n\n建议先执行: \`read({ filePath: "memory-bank/details/patterns.md" })\`\n\n如需跳过检查，用户可回复"跳过上下文"。`
-                    }]
-                  }
-                }).catch(err => log.error("Failed to send gating warning:", String(err)))
-              }
+              client.session.prompt({
+                path: { id: sessionID },
+                body: {
+                  noReply: true,
+                  variant: PLUGIN_PROMPT_VARIANT,
+                  parts: [{
+                    type: "text",
+                    text: `## [Memory Bank Gating Warning]\n\n检测到${riskLevel === "high" ? "高" : "中"}风险写操作，但本轮未读取项目上下文。\n\n建议先执行: \`read({ filePath: "memory-bank/details/patterns.md" })\`\n\n或调用: \`proxy_task({ subagent_type: "memory-reader", ... })\``
+                  }]
+                }
+              }).catch(err => log.error("Failed to send gating warning:", String(err)))
             }
           }
         }
@@ -1249,18 +1255,35 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             /\bsed\s+(-[^-]*)?-i/,
             /\bperl\s+(-[^-]*)?-[pi]/,
           ]
+          const bashSensitivePatterns = [
+            /package\.json/i, /\.env/i, /tsconfig\.json/i,
+            /src\/auth\//i, /src\/security\//i, /plugin\//i,
+            /docker/i, /\.github\/workflows/i, /infra\//i,
+          ]
           const isLikelyWrite = bashWritePatterns.some(p => p.test(command))
+          const isSensitiveTarget = bashSensitivePatterns.some(p => p.test(command))
           if (isLikelyWrite) {
-            const riskLevel = assessWriteRisk("bash", { command }, projectRoot)
+            const riskLevel: RiskLevel = isSensitiveTarget ? "high" : "medium"
             if (riskLevel === "high" && GATING_MODE === "block") {
               log.warn("Gating: bash write blocked (context not read)", { sessionID, gatingKey, command: command.slice(0, 100) })
               throw new Error(
                 `[Memory Bank Gating] 检测到 bash 写入操作，但本轮未读取项目上下文。\n` +
                 `请先执行: read({ filePath: "memory-bank/details/patterns.md" })`
               )
-            } else if (GATING_MODE === "warn" && !gatingState.warnedThisMessage) {
+            } else if (!gatingState.warnedThisMessage) {
               gatingState.warnedThisMessage = true
-              log.warn("Gating: bash write warning (context not read)", { sessionID, gatingKey, command: command.slice(0, 100) })
+              log.warn("Gating: bash write warning (context not read)", { sessionID, gatingKey, riskLevel, command: command.slice(0, 100) })
+              client.session.prompt({
+                path: { id: sessionID },
+                body: {
+                  noReply: true,
+                  variant: PLUGIN_PROMPT_VARIANT,
+                  parts: [{
+                    type: "text",
+                    text: `## [Memory Bank Gating Warning]\n\n检测到 bash ${riskLevel === "high" ? "高" : "中"}风险写入操作，但本轮未读取项目上下文。\n\n建议先执行: \`read({ filePath: "memory-bank/details/patterns.md" })\`\n\n或调用: \`proxy_task({ subagent_type: "memory-reader", ... })\``
+                  }]
+                }
+              }).catch(err => log.error("Failed to send bash gating warning:", String(err)))
             }
           }
         }
@@ -1319,7 +1342,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             for (const m of patchText.matchAll(/^(?:\+\+\+|---)\s+[ab]\/(.+)$/gm)) {
               if (m[1]) paths.push(m[1])
             }
-            for (const m of patchText.matchAll(/^\*\*\*\s+(?:Add|Update|Delete|Move to)\s+(?:File:\s*)?(.+)$/gm)) {
+      for (const m of patchText.matchAll(/^\*\*\*\s+(?:Add|Update|Delete|Move to:?)\s+(?:File:\s*)?(.+)$/gm)) {
               if (m[1]) paths.push(m[1].trim())
             }
           }
