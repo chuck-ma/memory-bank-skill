@@ -180,5 +180,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 7.1.0
-- **主要更新**: v7.1 Index-First + Direct-First 架构（意图驱动路由 + Gating 收紧 + 两层读取协议 + 模板升级路径）
+- **版本**: 7.3.0
+- **主要更新**: Doc-First Gate 默认启用（warn），无 Memory Bank 项目自动提醒初始化
