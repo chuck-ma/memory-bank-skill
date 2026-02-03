@@ -29,7 +29,7 @@ const GATING_MODE: GatingMode = (process.env.MEMORY_BANK_GUARD_MODE as GatingMod
 // warn: suggest writing MB doc before code (doesn't block)
 // block: require writing MB doc before code
 type DocFirstMode = "off" | "warn" | "block"
-const DOC_FIRST_MODE: DocFirstMode = (process.env.MEMORY_BANK_DOC_FIRST_MODE as DocFirstMode) || "off"
+const DOC_FIRST_MODE: DocFirstMode = (process.env.MEMORY_BANK_DOC_FIRST_MODE as DocFirstMode) || "warn"
 const TRUNCATION_NOTICE =
   "\n\n---\n\n[TRUNCATED] Memory Bank context exceeded size limit. Read files directly for complete content."
 
@@ -1568,7 +1568,30 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           })
 
           if (hasCodeFile && !dfState.warnedThisMessage) {
-            if (DOC_FIRST_MODE === "block") {
+            // Pre-check: memory-bank existence
+            const hasMemoryBank = await checkMemoryBankExists(projectRoot, log)
+            if (!hasMemoryBank) {
+              // No memory-bank → suggest init (once per session)
+              const state = getRootState(sessionID, projectRoot)
+              if (!state.initReminderFired) {
+                state.initReminderFired = true
+                log.info("Doc-First Gate: no memory-bank, sending init suggestion", { sessionID })
+                client.session.prompt({
+                  path: { id: sessionID },
+                  body: {
+                    noReply: true,
+                    variant: PLUGIN_PROMPT_VARIANT,
+                    parts: [{
+                      type: "text",
+                      text: `## [Memory Bank] 项目尚未启用\n\n` +
+                        `检测到代码写入，但项目尚未启用 Memory Bank。\n\n` +
+                        `建议运行 \`/memory-bank-refresh\` 初始化，开启文档先行工作流。`
+                    }]
+                  }
+                }).catch(err => log.error("Failed to send init suggestion:", String(err)))
+              }
+              // Skip Doc-First flow, continue to Write Guard
+            } else if (DOC_FIRST_MODE === "block") {
               log.warn("Doc-First Gate: code write blocked (no MB doc written)", {
                 sessionID, gatingKey: dfGatingKey, tool, targetPaths: dfTargetPaths,
               })
