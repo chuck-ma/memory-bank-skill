@@ -32,7 +32,7 @@ bunx memory-bank-skill install
 
 ### 自定义模型
 
-默认使用 `cliproxy/claude-opus-4-5-20251101`，可通过 `--model` 指定：
+默认使用 `cliproxy/claude-opus-4-6`，可通过 `--model` 指定：
 
 ```bash
 bunx memory-bank-skill install --model anthropic/claude-sonnet-4-5

@@ -344,7 +344,7 @@ async function installPluginToConfig(
     config.agent = {}
   }
   
-  const defaultModel = "cliproxy/claude-opus-4-5-20251101"
+  const defaultModel = "cliproxy/claude-opus-4-6"
   const installedBy = `memory-bank-skill@${VERSION}`
   
   const writerDefaults = {
@@ -982,7 +982,7 @@ Commands:
 
 Options:
   --model <model>  Specify model for memory-bank-writer agent
-                   Default: cliproxy/claude-opus-4-5-20251101
+                   Default: cliproxy/claude-opus-4-6
 
 Examples:
   bunx memory-bank-skill install
