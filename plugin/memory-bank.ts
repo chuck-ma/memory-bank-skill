@@ -93,6 +93,7 @@ interface MessageGatingState {
   warnedThisMessage: boolean
   docFirstSatisfied: boolean
   docFirstWarned: boolean
+  writingGuideInjected: boolean
 }
 
 // ============================================================================
@@ -511,7 +512,7 @@ function getMessageGatingState(gatingKey: string, sessionId?: string, projectRoo
         meta.pendingDocFirstSatisfied = false
       }
     }
-    state = { readFiles: new Set(), contextSatisfied: false, warnedThisMessage: false, docFirstSatisfied: inheritDocFirst, docFirstWarned: false }
+    state = { readFiles: new Set(), contextSatisfied: false, warnedThisMessage: false, docFirstSatisfied: inheritDocFirst, docFirstWarned: false, writingGuideInjected: false }
     messageGatingStates.set(gatingKey, state)
     if (messageGatingStates.size > 100) {
       const first = messageGatingStates.keys().next().value
@@ -1632,7 +1633,16 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       }
       // ==== End Doc-First Gate ====
 
-      async function injectWritingGuideline(sid: string): Promise<void> {
+      async function injectWritingGuideline(sid: string, writtenPaths: string[]): Promise<void> {
+        // Per-turn dedup: only inject once per message turn
+        const meta = getSessionMeta(sid, projectRoot)
+        const messageKey = meta.lastUserMessageKey || "default"
+        const gatingKey = `${sid}::${messageKey}`
+        const gatingState = getMessageGatingState(gatingKey, sid, projectRoot)
+        if (gatingState.writingGuideInjected) return
+        gatingState.writingGuideInjected = true
+
+        const pathList = writtenPaths.map(p => `- ${p}`).join("\n")
         client.session.prompt({
           path: { id: sid },
           body: {
@@ -1641,8 +1651,10 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             parts: [{
               type: "text",
               text: `## [Memory Bank Writing Guide]\n\n` +
-                `正在写入 memory-bank/，请先加载写入规范：\n` +
-                `read({ filePath: "~/.config/opencode/skills/memory-bank/references/writer.md" })`
+                `已检测到 memory-bank/ 写入：\n${pathList}\n\n` +
+                `建议参考写入规范确认内容是否需要调整：\n` +
+                `read({ filePath: "~/.config/opencode/skills/memory-bank/references/writer.md" })\n\n` +
+                `如需修正请直接修改，然后继续原本的任务。`
             }]
           }
         }).catch(err => log.error("Failed to send writing guideline:", String(err)))
@@ -1702,6 +1714,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         const targetPaths = extractPaths(toolLower, output.args || {})
         if (targetPaths.length === 0) return
 
+        const mbWrittenPaths: string[] = []
         for (const targetPath of targetPaths) {
           if (!(await isMemoryBankPath(targetPath))) continue
 
@@ -1713,9 +1726,13 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             )
           }
 
-          await injectWritingGuideline(sessionID)
+          mbWrittenPaths.push(targetPath)
           markDocFirstSatisfied(sessionID)
           log.debug("Memory Bank write allowed", { sessionID, tool, targetPath })
+        }
+
+        if (mbWrittenPaths.length > 0) {
+          await injectWritingGuideline(sessionID, mbWrittenPaths)
         }
       }
 
