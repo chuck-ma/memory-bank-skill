@@ -121,12 +121,16 @@ proxy_task({
 
 ### 写入阶段
 
-**核心约束**：主 Agent **禁止直接写入** `memory-bank/`，必须 delegate 给 `memory-bank-writer`。
+**写入方式**：主 Agent 直接使用 `write`/`edit` 工具写入 `memory-bank/`。Plugin 会自动注入 writing guideline（advisory）。
 
 流程（跨 turn）：
 1. 主 Agent 检测到写入时机，用自然语言询问是否写入（含目标文件 + 要点）
 2. 用户自然语言确认（"好"/"写"/"确认"）或跳过（"不用"/"跳过"/继续下一话题）
-3. 下一 turn 调用：`proxy_task({ subagent_type: "memory-bank-writer", description: "Memory Bank write", prompt: "Target: ...\nDraft: ..." })`
+3. 主 Agent 直接使用 `write`/`edit` 工具写入目标文件
+
+**硬限制**：
+- 只允许写入 `.md` 文件（Plugin 强制）
+- 不允许通过 bash 写入（必须使用 write/edit 等结构化工具）
 
 详见 [writer.md](references/writer.md)
 

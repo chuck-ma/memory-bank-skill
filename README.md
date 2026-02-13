@@ -50,7 +50,7 @@ bunx memory-bank-skill doctor
 |------|----------|
 | 复制 Skill 文件 | `~/.config/opencode/skills/memory-bank/`（含 `references/writer.md`） |
 | 配置 opencode.json | 添加 `permission.skill=allow`，注册插件和 agent |
-| 注册 Agent | 添加 `memory-bank-writer` agent（用于写入守卫） |
+| 注册 Agent | 添加 `memory-reader` agent（用于上下文读取） |
 | 写入 manifest | `~/.config/opencode/skills/memory-bank/.manifest.json` |
 
 ---
@@ -180,5 +180,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 7.3.0
-- **主要更新**: Doc-First Gate 默认启用（warn），无 Memory Bank 项目自动提醒初始化
+- **版本**: 7.4.0
+- **主要更新**: Writer 轻量化 — 去掉 writer subagent，主 agent 直接写入 + Plugin 注入 writing guideline

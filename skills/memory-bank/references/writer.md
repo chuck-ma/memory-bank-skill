@@ -1,20 +1,32 @@
-# Memory Bank Writer 规则
+# Memory Bank 写入规则
 
-> 此文档定义 Memory Bank 的写入规则，由 Writer Agent 执行。
+> 此文档定义 Memory Bank 的写入规则。主 Agent 直接执行写入，Plugin 注入 writing guideline（advisory）。
 
-## 调用方式
+## 写入方式
 
-使用 `proxy_task`（Task tool）同步调用 memory-bank-writer：
+主 Agent 直接使用 `write`/`edit` 工具写入 `memory-bank/` 下的 `.md` 文件：
 
 ```typescript
-proxy_task({
-  subagent_type: "memory-bank-writer",
-  description: "Memory Bank write (confirmed)",
-  prompt: "You are updating Memory Bank.\nConstraints:\n- Edit ONLY the target file.\n- Keep changes minimal and consistent with existing format.\n- Do NOT invent facts.\nInput:\nTarget: {target_file}\nDraft:\n1) {bullet_1}\n2) {bullet_2}\nOutput: Show what file changed + brief preview of changes."
+// 示例：更新 patterns.md
+edit({
+  filePath: "memory-bank/details/patterns.md",
+  oldString: "...",
+  newString: "..."
+})
+
+// 示例：创建新需求文档
+write({
+  filePath: "memory-bank/details/requirements/REQ-007-xxx.md",
+  content: "# REQ-007: ...\n\n..."
 })
 ```
 
-## Writer 自动触发流程（跨 turn）
+**Plugin 保护**：
+- 只允许 `.md` 文件写入（非 `.md` 会被阻止）
+- 不允许通过 bash 写入（必须使用 write/edit 等结构化工具）
+- 写入时 Plugin 自动注入 writing guideline 提示
+
+## 写入触发流程（跨 turn）
 
 ### 触发时机
 
@@ -58,9 +70,9 @@ proxy_task({
 
 **混合意图**：如果用户确认同时问了其他问题（如"写吧，顺便问一下..."），先执行写入，再回答问题。
 
-**Step 3: 执行（下一 turn）**
+**Step 3: 执行（本 turn 或下一 turn）**
 
-收到确认后，调用 memory-bank-writer 执行写入，然后展示变更预览。
+收到确认后，直接使用 `write`/`edit` 工具写入，然后展示变更预览。
 
 ## Refresh 流程（/memory-bank-refresh）
 
@@ -297,34 +309,22 @@ USER_BLOCK 将保持不变。
 
 ---
 
-## 职责分离（Auto-Trigger 模式）
+## 写入流程
 
-**Proposal 流程**：主 Agent 提供 Target + Draft，用户确认后 Writer 执行。
+**Proposal 流程**：主 Agent 提议 → 用户确认 → 主 Agent 直接执行写入。
 
 | 步骤 | 负责方 | 动作 |
 |------|--------|------|
 | 1 | 主 Agent | 检测写入时机，自然语言询问是否写入 |
 | 2 | 用户 | 自然语言确认（"好"/"写"）或拒绝（"不用"/"跳过"） |
-| 3 | 主 Agent | 调用 `proxy_task({ subagent_type: "memory-bank-writer", ... })` |
-| 4 | **Writer** | 执行写入（可顺带更新 index.md / MEMORY.md） |
-
-### 主 Agent 的 prompt 格式（调用 Writer 时）
-
-```
-Target: memory-bank/details/patterns.md
-Draft:
-1) {bullet 1}
-2) {bullet 2}
-```
-
-**说明**：Auto-Trigger 模式下，主 Agent 在 Proposal 中明确指定 Target 文件，用户确认后 Writer 按指定目标执行。
+| 3 | 主 Agent | 直接使用 `write`/`edit` 工具写入目标文件 |
 
 ---
 
 ## 执行输出格式
 
 ```
-[Memory Bank Writer 执行完成]
+[Memory Bank 写入完成]
 
 已执行：
 - 创建: memory-bank/details/design/xxx.md
@@ -339,9 +339,10 @@ Draft:
 ## 守卫机制
 
 Plugin 层面强制执行：
-- 只有 `memory-bank-writer` agent 能写入 `memory-bank/`
-- 只允许写入 `.md` 文件
-- 主 agent 直接写入会被阻止
+- 主 Agent 直接使用 `write`/`edit` 写入 `memory-bank/`
+- 只允许写入 `.md` 文件（非 `.md` 会被阻止）
+- 不允许通过 bash 写入（必须使用结构化工具）
+- 写入时 Plugin 自动注入 writing guideline 提示
 
 ---
 
@@ -364,10 +365,8 @@ Plugin 层面强制执行：
 ## 禁止行为
 
 - 不要跳过 Glob 检查
-- 不要等待用户确认（确认已由主 Agent 前置完成）
 - 不要修改 `memory-bank/` 以外的文件
 - 不要删除文件（除非迁移流程明确要求）
-- 不要自行决定写入内容（内容由主 Agent 提供）
 
 ---
 

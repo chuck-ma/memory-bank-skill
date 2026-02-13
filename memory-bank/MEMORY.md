@@ -9,17 +9,14 @@
 - **指针**: 核心实现 `plugin/memory-bank.ts`；Skill 入口 `skills/memory-bank/SKILL.md`；CLI `src/cli.ts`
 
 ## Current Focus
-> 更新于: 2026-02-03
+> 更新于: 2026-02-13
 
-- **当前焦点**: Session Anchors v3 + Recovery Gate — 设计完成，待实现
+- **当前焦点**: REQ-006 Writer 轻量化改造 — 去 subagent，主 agent 直写
 - **下一步**:
-  - [x] v7.1 架构设计与实现
-  - [x] Oracle 审查修复
-  - [x] REQ-004: v7.0 → v7.1 模板升级路径
-  - [x] Session Anchors v3 设计（经 Oracle 3 轮对抗，已收敛）
-  - [x] OpenCode 插件 Hook 知识整理
-  - [x] Session Anchors v3 实现（~200 行代码）
-  - [x] 向用户汇报最终结果
+  - [ ] 实现 Plugin 改造
+  - [ ] Skill 更新
+  - [ ] CLI 更新
+  - [ ] 发版
 - **阻塞项**: 无
 
 ## Decision Highlights (Still Binding)
@@ -28,6 +25,7 @@
 
 | 决策 | 日期 | 对实现的直接约束 |
 |------|------|-----------------|
+| Writer 轻量化：去 subagent 直写 | 2026-02-13 | 主 agent 直接写 memory-bank/，Plugin 注入 writing guideline（advisory），.md 硬限制保留，bash 写仍阻止 |
 | v7.1 Index-First + Direct-First | 2026-02-02 | 意图驱动路由 + direct-first 读取 + patterns.md gating 门槛 |
 | v7.0 Gating 架构 | 2026-02-01 | Plugin 写前拦截 + Writer 保留 subagent（安全边界） |
 | Skill 与 Plugin 分层互补 | 2026-01-31 | Plugin 提供最小行为闭环，Skill 提供完整规范和 fallback |
@@ -69,8 +67,9 @@
 
 ## Write Safety Rules
 
-- 主 agent **禁止**直接写 `memory-bank/`（Plugin 强制拦截）
-- 只能通过 `proxy_task(subagent_type="memory-bank-writer")` 写入，且仅允许 `.md`
+- 主 agent 直接 write/edit 写入 `memory-bank/`，Plugin 注入 writing guideline（advisory）
+- 仅允许 `.md` 文件（硬限制保留）
+- Bash 写入 memory-bank/ 仍阻止（只允许 write/edit 等结构化工具）
 - 写入前必须 Proposal → 用户确认
 - 禁止写入任何敏感信息（API key、token、密码、私钥）
 
@@ -88,7 +87,7 @@
    A: off / warn（默认）/ block → 详见 `memory-bank/details/patterns.md` v7.0 节
 
 4. Q: 写入流程是什么？
-   A: Proposal → 用户确认 → memory-bank-writer 执行 → 详见 `skills/memory-bank/references/writer.md`
+   A: Proposal → 用户确认 → 主 agent 直接 write/edit 执行 → 详见 `skills/memory-bank/references/writer.md`
 
 <!-- MACHINE_BLOCK_END -->
 

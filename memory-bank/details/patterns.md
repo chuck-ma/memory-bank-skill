@@ -397,6 +397,26 @@ function assessRisk(tool, args): "high" | "medium" | "low" {
 
 **详细需求**：见 [REQ-005-intent-declaration-gate.md](requirements/REQ-005-intent-declaration-gate.md)
 
+## REQ-006: Writer 轻量化改造（2026-02-13）
+
+| 决策 | 日期 | 原因 |
+|------|------|------|
+| 去掉 memory-bank-writer subagent，主 agent 直写 | 2026-02-13 | subagent 委托带来上下文损耗、token 开销、延迟 |
+
+**决策**：去掉 memory-bank-writer subagent，主 agent 直接写入 memory-bank/，Plugin 注入 writing guideline。
+
+**背景**：subagent 委托带来上下文损耗、token 开销、延迟。Gating warn 模式已证明"tool.execute.before 注入提示"的轻量守卫模式可行。
+
+**实现要点**：
+- Plugin Write Guard：从 block 改为 allow + inject guideline prompt
+- .md 文件限制保留（硬拦截）
+- Bash 写入 memory-bank/ 仍阻止（只允许 write/edit 等结构化工具）
+- Doc-First Gate：直接在当前 session 标记 satisfied，去掉 parent-writer 桥接
+- Writing guideline prompt 是 advisory，不是 enforcement；每个 messageKey 只注入一次
+- Proposal → 用户确认流程保留（Skill 层面约定）
+
+**Oracle 审查结论**：安全降级可接受（subagent 也是 LLM，prompt 级别约束等效），UX 收益明显。
+
 <!-- MACHINE_BLOCK_END -->
 
 <!-- USER_BLOCK_START -->

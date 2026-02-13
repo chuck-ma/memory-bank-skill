@@ -347,13 +347,6 @@ async function installPluginToConfig(
   const defaultModel = "cliproxy/claude-opus-4-6"
   const installedBy = `memory-bank-skill@${VERSION}`
   
-  const writerDefaults = {
-    description: "Memory Bank 专用写入代理",
-    model: customModel || defaultModel,
-    tools: { write: true, edit: true, bash: true },
-    "x-installed-by": installedBy
-  }
-  
   const readerDefaults = {
     description: "Memory Bank 并行读取代理，返回结构化上下文包",
     model: customModel || defaultModel,
@@ -396,7 +389,9 @@ async function installPluginToConfig(
     return agentModified
   }
   
-  if (mergeAgent(config.agent["memory-bank-writer"], writerDefaults, "memory-bank-writer")) {
+  if (config.agent["memory-bank-writer"]) {
+    delete config.agent["memory-bank-writer"]
+    changes.push("Removed agent: memory-bank-writer (no longer needed)")
     modified = true
   }
   
@@ -425,7 +420,6 @@ async function installCommands(
   
   const commandContent = `---
 description: 初始化、升级、迁移或刷新 Memory Bank
-agent: memory-bank-writer
 ---
 
 执行 Memory Bank 的 refresh 流程：
@@ -527,7 +521,7 @@ Replace <<<USER_REQUEST>>> with the user's original message verbatim.
 
 ---
 
-AMENDMENT B — Final Step: Memory Bank Writer (Propose -> Confirm -> Execute)
+AMENDMENT B — Final Step: Memory Bank Write (Propose -> Confirm -> Execute)
 
 Step W0 Timing:
 - AFTER you finish main task output, RIGHT BEFORE final answer for this turn.
@@ -567,14 +561,7 @@ Ignore: User continues to next topic without addressing the prompt (treat as ski
 
 **Mixed intent**: If user confirms AND asks another question (e.g., "写吧，顺便问一下..."), execute the write first, then answer their question in the same response.
 
-On confirmation, execute writer synchronously:
-\`\`\`
-proxy_task({
-  subagent_type: "memory-bank-writer",
-  description: "Memory Bank write (confirmed)",
-  prompt: "You are updating Memory Bank.\\nConstraints:\\n- Edit ONLY the target file.\\n- Keep changes minimal and consistent with existing format.\\n- Do NOT invent facts.\\nInput:\\nTarget: <PASTE TARGET>\\nDraft:\\n1) <PASTE>\\n2) <PASTE>\\nOutput: Show what file changed + brief preview of changes."
-})
-\`\`\`
+On confirmation, directly use write/edit tools to update the target file(s). Plugin will auto-inject writing guidelines.
 
 Step W5 After execution:
 - Show which file(s) updated and brief preview.
@@ -981,7 +968,7 @@ Commands:
   doctor     Check installation status
 
 Options:
-  --model <model>  Specify model for memory-bank-writer agent
+  --model <model>  Specify model for memory-reader agent
                    Default: cliproxy/claude-opus-4-6
 
 Examples:

@@ -124,10 +124,7 @@ const sessionMetas = new Map<string, SessionMeta>()
 const memoryBankExistsCache = new Map<string, boolean>()
 const fileCache = new Map<string, CacheEntry>()
 
-const WRITER_AGENT_NAME = "memory-bank-writer"
 const sessionsById = new Map<string, { parentID?: string }>()
-const writerSessionIDs = new Set<string>()
-const agentBySessionID = new Map<string, string>()
 
 const messageGatingStates = new Map<string, MessageGatingState>()
 const sessionAnchorStates = new Map<string, SessionAnchorState>()
@@ -333,7 +330,7 @@ drill_down: Step1 direct-read 1-3 details/*; Step2 需要证据/冲突/跨文件
 output: 回答必须给引用指针
 gating: 高风险写前需已读 patterns.md 或调用过 memory-reader
 
-write: proxy_task(subagent_type="memory-bank-writer", prompt="Target:...\\nDraft:...")
+write: 主 agent 直接 write/edit 写入 memory-bank/。写入前 Proposal → 用户确认。Plugin 注入 writing guide（advisory）。
 more: 完整规范见 /memory-bank skill
 `
     } else {
@@ -348,7 +345,7 @@ drill_down: Step1 direct-read 1-3 details/*; Step2 需要证据/冲突/跨文件
 output: 回答必须给引用指针
 gating: 高风险写前需已读 patterns.md 或调用过 memory-reader
 
-write: proxy_task(subagent_type="memory-bank-writer", prompt="Target:...\\nDraft:...")
+write: 主 agent 直接 write/edit 写入 memory-bank/。写入前 Proposal → 用户确认。Plugin 注入 writing guide（advisory）。
 more: 完整规范见 /memory-bank skill
 `
     }
@@ -1162,8 +1159,6 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           }
           sessionMetas.delete(sessionId)
           sessionsById.delete(sessionId)
-          writerSessionIDs.delete(sessionId)
-          agentBySessionID.delete(sessionId)
           sessionAnchorStates.delete(sessionId)
           log.info("Session deleted", { sessionId })
         }
@@ -1245,15 +1240,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
               log.info("Plan outputted detected", { sessionId })
             }
 
-            const agentName = (message as any)?.agent
-            if (agentName) {
-              agentBySessionID.set(sessionId, agentName)
-              const sessionInfo = sessionsById.get(sessionId)
-              if (agentName === WRITER_AGENT_NAME && sessionInfo?.parentID) {
-                writerSessionIDs.add(sessionId)
-                log.info("Writer agent session registered", { sessionId, agentName, parentID: sessionInfo.parentID })
-              }
-            }
+            // Agent name tracking removed (REQ-006: writer subagent no longer needed)
           }
         }
 
@@ -1610,7 +1597,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
                 `  - 新功能 / 需求 → requirements/REQ-xxx.md\n` +
                 `  - 重构 / 优化 → design/design-xxx.md\n` +
                 `  - 简单变更 → 追加到 progress.md\n\n` +
-                `调用方式: proxy_task({ subagent_type: "memory-bank-writer", ... })\n` +
+                `使用 write/edit 工具直接写入 memory-bank/ 下对应文件\n` +
                 `确认文档无误后再执行代码修改。`
               )
             } else {
@@ -1635,7 +1622,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
                       `  - 新功能 / 需求 → requirements/REQ-xxx.md\n` +
                       `  - 重构 / 优化 → design/design-xxx.md\n` +
                       `  - 简单变更 → 追加到 progress.md\n\n` +
-                      `调用方式: \`proxy_task({ subagent_type: "memory-bank-writer", ... })\``
+                      `使用 write/edit 工具直接写入 memory-bank/ 下对应文件`
                   }]
                 }
               }).catch(err => log.error("Failed to send doc-first warning:", String(err)))
@@ -1645,47 +1632,47 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       }
       // ==== End Doc-First Gate ====
 
-      const markParentDocFirstSatisfied = (writerSessionID: string): void => {
-        const parentID = sessionsById.get(writerSessionID)?.parentID
-        if (!parentID) return
-        const parentMeta = getSessionMeta(parentID, projectRoot)
-        const parentMsgKey = parentMeta.lastUserMessageKey
-        if (parentMsgKey) {
-          const parentGatingKey = `${parentID}::${parentMsgKey}`
-          const parentGating = getMessageGatingState(parentGatingKey, parentID, projectRoot)
-          parentGating.docFirstSatisfied = true
-          log.debug("Doc-First: parent satisfied via writer write", { writerSessionID, parentID, parentGatingKey })
+      const writingGuidelineInjected = new Set<string>()
+
+      async function injectWritingGuideline(sid: string): Promise<void> {
+        const meta = getSessionMeta(sid, projectRoot)
+        const messageKey = meta.lastUserMessageKey || "default"
+        const guideKey = `${sid}::${messageKey}`
+
+        if (writingGuidelineInjected.has(guideKey)) return
+        writingGuidelineInjected.add(guideKey)
+
+        if (writingGuidelineInjected.size > 100) {
+          const first = writingGuidelineInjected.values().next().value
+          if (first) writingGuidelineInjected.delete(first)
         }
-        const defaultGatingKey = `${parentID}::default`
-        const defaultState = messageGatingStates.get(defaultGatingKey)
-        if (defaultState) {
-          defaultState.docFirstSatisfied = true
-        }
-        parentMeta.pendingDocFirstSatisfied = true
+
+        client.session.prompt({
+          path: { id: sid },
+          body: {
+            noReply: true,
+            variant: PLUGIN_PROMPT_VARIANT,
+            parts: [{
+              type: "text",
+              text: `## [Memory Bank Writing Guide]\n\n` +
+                `写入 memory-bank/ 文件时，请遵循以下规则：\n\n` +
+                `1. **区块分离**：保留 MACHINE_BLOCK / USER_BLOCK 分区，不覆盖 USER_BLOCK\n` +
+                `2. **追加优先**：patterns/learnings 只追加不重写\n` +
+                `3. **格式一致**：匹配目标文件现有格式（表格、列表等）\n` +
+                `4. **禁止敏感信息**：不写入 API key、密码、token 等\n` +
+                `5. **最小变更**：只改需要改的部分，不重排全文`
+            }]
+          }
+        }).catch(err => log.error("Failed to send writing guideline:", String(err)))
       }
 
-      const isWriterAllowed = (sid: string): boolean => {
-        if (writerSessionIDs.has(sid)) return true
-        
-        // Late registration: if agent is already known but not yet in writerSessionIDs
-        const sessionInfo = sessionsById.get(sid)
-        const agentName = agentBySessionID.get(sid)
-        if (agentName === WRITER_AGENT_NAME && sessionInfo?.parentID) {
-          writerSessionIDs.add(sid)
-          log.info("Writer agent late-registered", { sessionID: sid, agentName })
-          return true
-        }
-        return false
-      }
-
-      // Helper: block with error
-      const blockWrite = (reason: string, context: Record<string, unknown>) => {
-        log.warn("Memory Bank write blocked", { sessionID, tool, reason, ...context })
-        throw new Error(
-          `[Memory Bank Guard] 写入 memory-bank/ 受限。\n` +
-          `请使用 proxy_task 调用 memory-bank-writer agent 来更新 Memory Bank。\n` +
-          `示例: proxy_task({ subagent_type: "memory-bank-writer", description: "Memory Bank write", prompt: "Target: memory-bank/details/patterns.md\\nDraft:\\n1) ..." })`
-        )
+      function markDocFirstSatisfied(sid: string): void {
+        const meta = getSessionMeta(sid, projectRoot)
+        const messageKey = meta.lastUserMessageKey || "default"
+        const gatingKey = `${sid}::${messageKey}`
+        const gatingState = getMessageGatingState(gatingKey, sid, projectRoot)
+        gatingState.docFirstSatisfied = true
+        log.debug("Doc-First: satisfied via direct memory-bank write", { sessionID: sid, gatingKey })
       }
       
       // Helper: extract all paths from tool args (handles multi-file tools)
@@ -1732,26 +1719,21 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       if (fileWriteTools.includes(toolLower)) {
         const targetPaths = extractPaths(toolLower, output.args || {})
         if (targetPaths.length === 0) return
-        
+
         for (const targetPath of targetPaths) {
           if (!(await isMemoryBankPath(targetPath))) continue
-          
-          // File type restriction - only allow *.md files
+
           if (!targetPath.toLowerCase().endsWith(".md")) {
-            blockWrite("only .md files allowed", { targetPath })
+            log.warn("Memory Bank write blocked (non-.md file)", { sessionID, tool, targetPath })
+            throw new Error(
+              `[Memory Bank Guard] memory-bank/ 下只允许写入 .md 文件。\n` +
+              `目标文件: ${targetPath}`
+            )
           }
 
-          if (isWriterAllowed(sessionID)) {
-            log.debug("Writer agent write allowed", { sessionID, tool, targetPath })
-            markParentDocFirstSatisfied(sessionID)
-            return
-          }
-
-          blockWrite("not writer agent", { 
-            targetPath,
-            isSubAgent: !!sessionsById.get(sessionID)?.parentID,
-            agentName: agentBySessionID.get(sessionID),
-          })
+          await injectWritingGuideline(sessionID)
+          markDocFirstSatisfied(sessionID)
+          log.debug("Memory Bank write allowed", { sessionID, tool, targetPath })
         }
       }
 
@@ -1874,56 +1856,37 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           if (redirectTarget && redirectTarget.includes("memory-bank")) {
             const resolvedTarget = path.resolve(projectRoot, redirectTarget)
             if (await isMemoryBankPath(resolvedTarget)) {
-              if (isWriterAllowed(sessionID)) {
-                log.debug("Writer agent bash redirect allowed", { sessionID, command: command.slice(0, 100) })
-                markParentDocFirstSatisfied(sessionID)
-                return
-              }
-              blockWrite("bash redirect to memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
-              return
+              log.warn("Memory Bank bash redirect blocked", { sessionID, command: command.slice(0, 200) })
+              throw new Error("[Memory Bank Guard] 请使用 write/edit 工具写入 memory-bank/，不支持 bash 写入。")
             }
           }
 
           // Read-only commands: still need to verify paths
           if (readOnlyPatterns.some(p => p.test(segment))) {
-            // Special case: find with dangerous flags can modify/write files
             if (/^\s*find\b/i.test(segment) && /-(delete|exec|ok|execdir|okdir|fprint|fprint0|fprintf|fls)\b/i.test(segment)) {
               const argv = parseArgv(segment)
               const pathArgs = extractPathArgs(argv)
               for (const pathArg of pathArgs) {
                 const resolved = path.resolve(projectRoot, pathArg)
                 if (await isMemoryBankPath(resolved)) {
-                  if (isWriterAllowed(sessionID)) {
-                    log.debug("Writer agent find with dangerous flags allowed", { sessionID })
-                    markParentDocFirstSatisfied(sessionID)
-                    return
-                  }
-                  blockWrite("find with dangerous flags on memory-bank", { command: command.slice(0, 200), segment: segment.slice(0, 100) })
-                  return
+                  log.warn("Memory Bank bash find-write blocked", { sessionID, command: command.slice(0, 200) })
+                  throw new Error("[Memory Bank Guard] 请使用 write/edit 工具写入 memory-bank/，不支持 bash 写入。")
                 }
               }
             }
-            // Read-only git/other commands are allowed
             continue
           }
           
-          // Non-readonly command with memory-bank reference - check if any path is under root memory-bank/
           const argv = parseArgv(segment)
           const pathArgs = extractPathArgs(argv)
           
           for (const pathArg of pathArgs) {
             const resolved = path.resolve(projectRoot, pathArg)
             if (await isMemoryBankPath(resolved)) {
-              if (isWriterAllowed(sessionID)) {
-                log.debug("Writer agent bash write allowed", { sessionID, command: command.slice(0, 100) })
-                markParentDocFirstSatisfied(sessionID)
-                return
-              }
-              blockWrite("bash write to memory-bank", { command: command.slice(0, 200), pathArg, resolved })
-              return
+              log.warn("Memory Bank bash write blocked", { sessionID, command: command.slice(0, 200), pathArg })
+              throw new Error("[Memory Bank Guard] 请使用 write/edit 工具写入 memory-bank/，不支持 bash 写入。")
             }
           }
-          // Path references memory-bank but resolves outside root memory-bank/ - allowed
           log.debug("Bash command allowed (path not under root memory-bank/)", { segment: segment.slice(0, 100) })
         }
       }
