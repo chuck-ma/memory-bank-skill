@@ -1632,21 +1632,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       }
       // ==== End Doc-First Gate ====
 
-      const writingGuidelineInjected = new Set<string>()
-
       async function injectWritingGuideline(sid: string): Promise<void> {
-        const meta = getSessionMeta(sid, projectRoot)
-        const messageKey = meta.lastUserMessageKey || "default"
-        const guideKey = `${sid}::${messageKey}`
-
-        if (writingGuidelineInjected.has(guideKey)) return
-        writingGuidelineInjected.add(guideKey)
-
-        if (writingGuidelineInjected.size > 100) {
-          const first = writingGuidelineInjected.values().next().value
-          if (first) writingGuidelineInjected.delete(first)
-        }
-
         client.session.prompt({
           path: { id: sid },
           body: {
