@@ -180,5 +180,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 7.4.0
-- **主要更新**: Writer 轻量化 — 去掉 writer subagent，主 agent 直接写入 + Plugin 注入 writing guideline
+- **版本**: 7.4.1
+- **主要更新**: Writing guideline 改为 post-write advisory — 写入后建议参考规范检查，per-turn 去重
