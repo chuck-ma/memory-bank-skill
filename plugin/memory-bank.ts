@@ -1641,12 +1641,8 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             parts: [{
               type: "text",
               text: `## [Memory Bank Writing Guide]\n\n` +
-                `写入 memory-bank/ 文件时，请遵循以下规则：\n\n` +
-                `1. **区块分离**：保留 MACHINE_BLOCK / USER_BLOCK 分区，不覆盖 USER_BLOCK\n` +
-                `2. **追加优先**：patterns/learnings 只追加不重写\n` +
-                `3. **格式一致**：匹配目标文件现有格式（表格、列表等）\n` +
-                `4. **禁止敏感信息**：不写入 API key、密码、token 等\n` +
-                `5. **最小变更**：只改需要改的部分，不重排全文`
+                `正在写入 memory-bank/，请先加载写入规范：\n` +
+                `read({ filePath: "~/.config/opencode/skills/memory-bank/references/writer.md" })`
             }]
           }
         }).catch(err => log.error("Failed to send writing guideline:", String(err)))
