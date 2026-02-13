@@ -31,3 +31,4 @@ dist/
 # Logs
 log/
 .DS_Store
+.opencode/task-results
