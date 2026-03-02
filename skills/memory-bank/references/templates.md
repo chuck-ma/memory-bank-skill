@@ -62,8 +62,7 @@
 
 ## Write Safety Rules
 
-- 主 agent **禁止**直接写 `memory-bank/`（Plugin 强制拦截）
-- 只能通过 `proxy_task(subagent_type="memory-bank-writer")` 写入，且仅允许 `.md`
+- 主 agent 可直接写 `memory-bank/`，仅限 `.md` 文件（Plugin 强制），非 .md 写入会被阻止
 - 写入前必须 Proposal → 用户确认
 - 禁止写入任何敏感信息（API key、token、密码、私钥）
 

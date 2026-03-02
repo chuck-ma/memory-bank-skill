@@ -27,9 +27,9 @@
 |------|------|-----------------|
 | Writer 轻量化：去 subagent 直写 | 2026-02-13 | 主 agent 直接写 memory-bank/，Plugin 注入 writing guideline（advisory），.md 硬限制保留，bash 写仍阻止 |
 | v7.1 Index-First + Direct-First | 2026-02-02 | 意图驱动路由 + direct-first 读取 + patterns.md gating 门槛 |
-| v7.0 Gating 架构 | 2026-02-01 | Plugin 写前拦截 + Writer 保留 subagent（安全边界） |
+| v7.0 Gating 架构 | 2026-02-01 | Plugin 写前拦截 + .md 后缀限制（安全边界）|
 | Skill 与 Plugin 分层互补 | 2026-01-31 | Plugin 提供最小行为闭环，Skill 提供完整规范和 fallback |
-| Writer 自动触发 + Proposal | 2026-01-31 | 写入前必须 Proposal → 用户确认 → Writer 执行 |
+| 写入确认流程 | 2026-01-31 | 写入前必须 Proposal → 用户确认 → 主 Agent 直接写入 |
 
 ## Routing Rules（意图驱动）
 
@@ -67,9 +67,7 @@
 
 ## Write Safety Rules
 
-- 主 agent 直接 write/edit 写入 `memory-bank/`，Plugin 注入 writing guideline（advisory）
-- 仅允许 `.md` 文件（硬限制保留）
-- Bash 写入 memory-bank/ 仍阻止（只允许 write/edit 等结构化工具）
+- 主 agent 可直接写 `memory-bank/`，仅限 `.md` 文件（Plugin 强制），非 .md 写入会被阻止
 - 写入前必须 Proposal → 用户确认
 - 禁止写入任何敏感信息（API key、token、密码、私钥）
 
@@ -87,7 +85,7 @@
    A: off / warn（默认）/ block → 详见 `memory-bank/details/patterns.md` v7.0 节
 
 4. Q: 写入流程是什么？
-   A: Proposal → 用户确认 → 主 agent 直接 write/edit 执行 → 详见 `skills/memory-bank/references/writer.md`
+   A: Proposal → 用户确认 → 主 Agent 直接写入 → 详见 `skills/memory-bank/references/writer.md`
 
 <!-- MACHINE_BLOCK_END -->
 

@@ -117,7 +117,7 @@ open_questions:
 - `evidence[].claim_id` → 主 Agent 引用作为决策依据
 - `conflicts[].severity: high` → 优先处理
 - `conflicts[].trust_source` → 当前应参考的权威来源
-- 发现冲突 → 建议调用 memory-bank-writer 更新
+- 发现冲突 → 建议主 Agent 更新对应 Memory Bank 文档
 
 ---
 

@@ -207,26 +207,23 @@ interface SessionMeta {
 ```
 ⚠️ [Doc-First] 建议先沉淀工作文档再写代码。
 
-请用 MemoryWriter 先记录你要做什么，并作为第一优先级 todo：
+先记录你要做什么，并作为第一优先级 todo：
 • 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md
 • 新功能 / 需求 → requirements/REQ-xxx.md
 • 重构 / 优化 → design/design-xxx.md
 • 简单变更 → 追加到 progress.md
-
-调用方式：proxy_task({ subagent_type: "memory-bank-writer", ... })
 ```
 
 **block 模式**：
 ```
 ❌ [Doc-First Gate] 请先沉淀工作文档再写代码。
 
-请用 MemoryWriter 先记录你要做什么：
+先记录你要做什么：
 • 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md
 • 新功能 / 需求 → requirements/REQ-xxx.md
 • 重构 / 优化 → design/design-xxx.md
 • 简单变更 → 追加到 progress.md
 
-调用方式：proxy_task({ subagent_type: "memory-bank-writer", ... })
 写完文档后再执行代码修改。
 ```
 

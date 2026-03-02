@@ -389,12 +389,6 @@ async function installPluginToConfig(
     return agentModified
   }
   
-  if (config.agent["memory-bank-writer"]) {
-    delete config.agent["memory-bank-writer"]
-    changes.push("Removed agent: memory-bank-writer (no longer needed)")
-    modified = true
-  }
-  
   if (mergeAgent(config.agent["memory-reader"], readerDefaults, "memory-reader")) {
     modified = true
   }
@@ -505,7 +499,7 @@ Step R1 Trigger (any):
 
 Step R2 Skip:
 - User says "skip memory-bank" or "不需要上下文"
-- Request is about Memory Bank itself (keywords: memory-bank/, memory-reader, memory-bank-writer, /memory-bank, MEMORY.md, details/patterns.md, details/learnings/, details/requirements/)
+- Request is about Memory Bank itself (keywords: memory-bank/, memory-reader, /memory-bank, MEMORY.md, details/patterns.md, details/learnings/, details/requirements/)
 - Request is obviously generic and repo context is not needed
 - Most recent memory_reader YAML in conversation has same request content (avoid re-reading)
 
@@ -521,7 +515,7 @@ Replace <<<USER_REQUEST>>> with the user's original message verbatim.
 
 ---
 
-AMENDMENT B — Final Step: Memory Bank Write (Propose -> Confirm -> Execute)
+AMENDMENT B — Final Step: Memory Bank Writer (Propose -> Confirm -> Execute)
 
 Step W0 Timing:
 - AFTER you finish main task output, RIGHT BEFORE final answer for this turn.
@@ -561,7 +555,11 @@ Ignore: User continues to next topic without addressing the prompt (treat as ski
 
 **Mixed intent**: If user confirms AND asks another question (e.g., "写吧，顺便问一下..."), execute the write first, then answer their question in the same response.
 
-On confirmation, directly use write/edit tools to update the target file(s). Plugin will auto-inject writing guidelines.
+On confirmation, write directly to the target file:
+\`\`\`
+write({ filePath: "<TARGET>", content: "<CONTENT>" })
+\`\`\`
+Constraints: Edit ONLY the target file. Keep changes minimal and consistent with existing format. Do NOT invent facts. Show what changed + brief preview.
 
 Step W5 After execution:
 - Show which file(s) updated and brief preview.

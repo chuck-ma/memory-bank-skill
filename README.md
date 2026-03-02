@@ -50,7 +50,7 @@ bunx memory-bank-skill doctor
 |------|----------|
 | 复制 Skill 文件 | `~/.config/opencode/skills/memory-bank/`（含 `references/writer.md`） |
 | 配置 opencode.json | 添加 `permission.skill=allow`，注册插件和 agent |
-| 注册 Agent | 添加 `memory-reader` agent（用于上下文读取） |
+| 注册 Agent | 添加 `memory-reader` agent（用于并行上下文读取） |
 | 写入 manifest | `~/.config/opencode/skills/memory-bank/.manifest.json` |
 
 ---
@@ -180,5 +180,5 @@ service=memory-bank Plugin initialized (unified) {"projectRoot":"..."}
 
 ## 版本
 
-- **版本**: 7.4.1
-- **主要更新**: Writing guideline 改为 post-write advisory — 写入后建议参考规范检查，per-turn 去重
+- **版本**: 7.4.3
+- **主要更新**: 移除 memory-bank-writer 子 Agent，主 Agent 直接写入 memory-bank/

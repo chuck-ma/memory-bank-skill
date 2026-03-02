@@ -77,7 +77,6 @@ interface SessionMeta {
   lastUserMessageDigest?: string
   lastUserMessageAt?: number
   lastUserMessageKey?: string
-  pendingDocFirstSatisfied: boolean
 }
 
 interface MemoryBankContextResult {
@@ -93,7 +92,6 @@ interface MessageGatingState {
   warnedThisMessage: boolean
   docFirstSatisfied: boolean
   docFirstWarned: boolean
-  writingGuideInjected: boolean
 }
 
 // ============================================================================
@@ -125,7 +123,7 @@ const sessionMetas = new Map<string, SessionMeta>()
 const memoryBankExistsCache = new Map<string, boolean>()
 const fileCache = new Map<string, CacheEntry>()
 
-const sessionsById = new Map<string, { parentID?: string }>()
+
 
 const messageGatingStates = new Map<string, MessageGatingState>()
 const sessionAnchorStates = new Map<string, SessionAnchorState>()
@@ -331,7 +329,7 @@ drill_down: Step1 direct-read 1-3 details/*; Step2 需要证据/冲突/跨文件
 output: 回答必须给引用指针
 gating: 高风险写前需已读 patterns.md 或调用过 memory-reader
 
-write: 主 agent 直接 write/edit 写入 memory-bank/。写入前 Proposal → 用户确认。Plugin 注入 writing guide（advisory）。
+write: 主 Agent 直接写 memory-bank/ 文件（用户确认后），仅限 .md
 more: 完整规范见 /memory-bank skill
 `
     } else {
@@ -346,7 +344,7 @@ drill_down: Step1 direct-read 1-3 details/*; Step2 需要证据/冲突/跨文件
 output: 回答必须给引用指针
 gating: 高风险写前需已读 patterns.md 或调用过 memory-reader
 
-write: 主 agent 直接 write/edit 写入 memory-bank/。写入前 Proposal → 用户确认。Plugin 注入 writing guide（advisory）。
+write: 主 Agent 直接写 memory-bank/ 文件（用户确认后），仅限 .md
 more: 完整规范见 /memory-bank skill
 `
     }
@@ -427,7 +425,7 @@ async function checkMemoryBankExists(
 function getSessionMeta(sessionId: string, fallbackRoot: string): SessionMeta {
   let meta = sessionMetas.get(sessionId)
   if (!meta) {
-    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0, pendingDocFirstSatisfied: false }
+    meta = { rootsTouched: new Set(), lastActiveRoot: fallbackRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0 }
     sessionMetas.set(sessionId, meta)
   }
   return meta
@@ -501,18 +499,10 @@ function isDisabled(): boolean {
   return process.env.MEMORY_BANK_DISABLED === "1" || process.env.MEMORY_BANK_DISABLED === "true"
 }
 
-function getMessageGatingState(gatingKey: string, sessionId?: string, projectRoot?: string): MessageGatingState {
+function getMessageGatingState(gatingKey: string): MessageGatingState {
   let state = messageGatingStates.get(gatingKey)
   if (!state) {
-    let inheritDocFirst = false
-    if (sessionId && projectRoot) {
-      const meta = sessionMetas.get(sessionId)
-      if (meta?.pendingDocFirstSatisfied) {
-        inheritDocFirst = true
-        meta.pendingDocFirstSatisfied = false
-      }
-    }
-    state = { readFiles: new Set(), contextSatisfied: false, warnedThisMessage: false, docFirstSatisfied: inheritDocFirst, docFirstWarned: false, writingGuideInjected: false }
+    state = { readFiles: new Set(), contextSatisfied: false, warnedThisMessage: false, docFirstSatisfied: false, docFirstWarned: false }
     messageGatingStates.set(gatingKey, state)
     if (messageGatingStates.size > 100) {
       const first = messageGatingStates.keys().next().value
@@ -1144,11 +1134,9 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
 
         if (event.type === "session.created") {
-          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0, pendingDocFirstSatisfied: false })
+          sessionMetas.set(sessionId, { rootsTouched: new Set(), lastActiveRoot: projectRoot, notifiedMessageIds: new Set(), planOutputted: false, promptInProgress: false, userMessageReceived: false, sessionNotified: false, userMessageSeq: 0 })
           
-          const parentID = info?.parentID
-          sessionsById.set(sessionId, { parentID })
-          log.info("Session created", { sessionId, parentID })
+          log.info("Session created", { sessionId, parentID: info?.parentID })
         }
 
         if (event.type === "session.deleted") {
@@ -1159,7 +1147,6 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             }
           }
           sessionMetas.delete(sessionId)
-          sessionsById.delete(sessionId)
           sessionAnchorStates.delete(sessionId)
           log.info("Session deleted", { sessionId })
         }
@@ -1241,7 +1228,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
               log.info("Plan outputted detected", { sessionId })
             }
 
-            // Agent name tracking removed (REQ-006: writer subagent no longer needed)
+
           }
         }
 
@@ -1437,7 +1424,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         const meta = getSessionMeta(sessionID, projectRoot)
         const messageKey = meta.lastUserMessageKey || "default"
         const gatingKey = `${sessionID}::${messageKey}`
-        const gatingState = getMessageGatingState(gatingKey, sessionID, projectRoot)
+        const gatingState = getMessageGatingState(gatingKey)
         const toolLower = tool.toLowerCase()
         
         const readTools = ["read"]
@@ -1547,7 +1534,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         const dfMeta = getSessionMeta(sessionID, projectRoot)
         const dfMessageKey = dfMeta.lastUserMessageKey || "default"
         const dfGatingKey = `${sessionID}::${dfMessageKey}`
-        const dfState = getMessageGatingState(dfGatingKey, sessionID, projectRoot)
+        const dfState = getMessageGatingState(dfGatingKey)
         const dfToolLower = tool.toLowerCase()
 
         const dfWriteTools = ["write", "edit", "multiedit", "apply_patch", "patch"]
@@ -1593,12 +1580,11 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
                 `先在 memory-bank/details/ 中搜索是否已有相关的需求/设计文档。\n\n` +
                 `**第二步：根据结果行动**\n` +
                 `• **已有相关文档** → 对照检查原始描述是否准确，如有偏差先修正文档再改代码\n` +
-                `• **无相关文档** → 用 MemoryWriter 先记录再动手：\n` +
+                `• **无相关文档** → 先写文档再动手：\n` +
                 `  - 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md\n` +
                 `  - 新功能 / 需求 → requirements/REQ-xxx.md\n` +
                 `  - 重构 / 优化 → design/design-xxx.md\n` +
                 `  - 简单变更 → 追加到 progress.md\n\n` +
-                `使用 write/edit 工具直接写入 memory-bank/ 下对应文件\n` +
                 `确认文档无误后再执行代码修改。`
               )
             } else {
@@ -1618,12 +1604,11 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
                       `先在 memory-bank/details/ 中搜索是否已有相关的需求/设计文档。\n\n` +
                       `**第二步：根据结果行动**\n` +
                       `• **已有相关文档** → 对照检查原始描述是否准确，如有偏差先修正文档再改代码\n` +
-                      `• **无相关文档** → 用 MemoryWriter 先记录再动手：\n` +
+                      `• **无相关文档** → 先写文档再动手：\n` +
                       `  - 修 Bug / 踩坑 → learnings/YYYY-MM-DD-xxx.md\n` +
                       `  - 新功能 / 需求 → requirements/REQ-xxx.md\n` +
                       `  - 重构 / 优化 → design/design-xxx.md\n` +
-                      `  - 简单变更 → 追加到 progress.md\n\n` +
-                      `使用 write/edit 工具直接写入 memory-bank/ 下对应文件`
+                      `  - 简单变更 → 追加到 progress.md`
                   }]
                 }
               }).catch(err => log.error("Failed to send doc-first warning:", String(err)))
@@ -1633,42 +1618,6 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       }
       // ==== End Doc-First Gate ====
 
-      async function injectWritingGuideline(sid: string, writtenPaths: string[]): Promise<void> {
-        // Per-turn dedup: only inject once per message turn
-        const meta = getSessionMeta(sid, projectRoot)
-        const messageKey = meta.lastUserMessageKey || "default"
-        const gatingKey = `${sid}::${messageKey}`
-        const gatingState = getMessageGatingState(gatingKey, sid, projectRoot)
-        if (gatingState.writingGuideInjected) return
-        gatingState.writingGuideInjected = true
-
-        const pathList = writtenPaths.map(p => `- ${p}`).join("\n")
-        client.session.prompt({
-          path: { id: sid },
-          body: {
-            noReply: true,
-            variant: PLUGIN_PROMPT_VARIANT,
-            parts: [{
-              type: "text",
-              text: `## [Memory Bank Writing Guide]\n\n` +
-                `已检测到 memory-bank/ 写入：\n${pathList}\n\n` +
-                `建议参考写入规范确认内容是否需要调整：\n` +
-                `read({ filePath: "~/.config/opencode/skills/memory-bank/references/writer.md" })\n\n` +
-                `如需修正请直接修改，然后继续原本的任务。`
-            }]
-          }
-        }).catch(err => log.error("Failed to send writing guideline:", String(err)))
-      }
-
-      function markDocFirstSatisfied(sid: string): void {
-        const meta = getSessionMeta(sid, projectRoot)
-        const messageKey = meta.lastUserMessageKey || "default"
-        const gatingKey = `${sid}::${messageKey}`
-        const gatingState = getMessageGatingState(gatingKey, sid, projectRoot)
-        gatingState.docFirstSatisfied = true
-        log.debug("Doc-First: satisfied via direct memory-bank write", { sessionID: sid, gatingKey })
-      }
-      
       // Helper: extract all paths from tool args (handles multi-file tools)
       const extractPaths = (toolName: string, args: Record<string, unknown>): string[] => {
         const paths: string[] = []
@@ -1714,25 +1663,26 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         const targetPaths = extractPaths(toolLower, output.args || {})
         if (targetPaths.length === 0) return
 
-        const mbWrittenPaths: string[] = []
+        const mbPaths: string[] = []
         for (const targetPath of targetPaths) {
-          if (!(await isMemoryBankPath(targetPath))) continue
-
-          if (!targetPath.toLowerCase().endsWith(".md")) {
-            log.warn("Memory Bank write blocked (non-.md file)", { sessionID, tool, targetPath })
-            throw new Error(
-              `[Memory Bank Guard] memory-bank/ 下只允许写入 .md 文件。\n` +
-              `目标文件: ${targetPath}`
-            )
-          }
-
-          mbWrittenPaths.push(targetPath)
-          markDocFirstSatisfied(sessionID)
-          log.debug("Memory Bank write allowed", { sessionID, tool, targetPath })
+          if (await isMemoryBankPath(targetPath)) mbPaths.push(targetPath)
         }
 
-        if (mbWrittenPaths.length > 0) {
-          await injectWritingGuideline(sessionID, mbWrittenPaths)
+        if (mbPaths.length > 0) {
+          for (const targetPath of mbPaths) {
+            if (!targetPath.toLowerCase().endsWith(".md")) {
+              log.warn("Memory Bank write blocked (non-.md file)", { sessionID, tool, targetPath })
+              throw new Error(
+                `[Memory Bank Guard] memory-bank/ 仅允许写入 .md 文件。\n` +
+                `目标文件: ${targetPath}`
+              )
+            }
+          }
+          const dfMsgKey = getSessionMeta(sessionID, projectRoot).lastUserMessageKey || "default"
+          const dfGatingKey = `${sessionID}::${dfMsgKey}`
+          getMessageGatingState(dfGatingKey).docFirstSatisfied = true
+          log.debug("Memory Bank .md write(s) allowed, docFirstSatisfied marked", { sessionID, tool, mbPaths })
+          return
         }
       }
 
@@ -1847,34 +1797,18 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
 
         for (const segment of splitShellSegments(command)) {
-          // Quick check: does this segment mention memory-bank at all?
           if (!segment.includes("memory-bank")) continue
           
-          // Check redirect target
           const redirectTarget = extractRedirectTarget(segment)
           if (redirectTarget && redirectTarget.includes("memory-bank")) {
             const resolvedTarget = path.resolve(projectRoot, redirectTarget)
             if (await isMemoryBankPath(resolvedTarget)) {
-              log.warn("Memory Bank bash redirect blocked", { sessionID, command: command.slice(0, 200) })
-              throw new Error("[Memory Bank Guard] 请使用 write/edit 工具写入 memory-bank/，不支持 bash 写入。")
+              log.debug("Bash redirect to memory-bank allowed", { sessionID, command: command.slice(0, 100) })
+              return
             }
           }
 
-          // Read-only commands: still need to verify paths
-          if (readOnlyPatterns.some(p => p.test(segment))) {
-            if (/^\s*find\b/i.test(segment) && /-(delete|exec|ok|execdir|okdir|fprint|fprint0|fprintf|fls)\b/i.test(segment)) {
-              const argv = parseArgv(segment)
-              const pathArgs = extractPathArgs(argv)
-              for (const pathArg of pathArgs) {
-                const resolved = path.resolve(projectRoot, pathArg)
-                if (await isMemoryBankPath(resolved)) {
-                  log.warn("Memory Bank bash find-write blocked", { sessionID, command: command.slice(0, 200) })
-                  throw new Error("[Memory Bank Guard] 请使用 write/edit 工具写入 memory-bank/，不支持 bash 写入。")
-                }
-              }
-            }
-            continue
-          }
+          if (readOnlyPatterns.some(p => p.test(segment))) continue
           
           const argv = parseArgv(segment)
           const pathArgs = extractPathArgs(argv)
@@ -1882,8 +1816,8 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           for (const pathArg of pathArgs) {
             const resolved = path.resolve(projectRoot, pathArg)
             if (await isMemoryBankPath(resolved)) {
-              log.warn("Memory Bank bash write blocked", { sessionID, command: command.slice(0, 200), pathArg })
-              throw new Error("[Memory Bank Guard] 请使用 write/edit 工具写入 memory-bank/，不支持 bash 写入。")
+              log.debug("Bash write to memory-bank allowed", { sessionID, command: command.slice(0, 100), pathArg })
+              return
             }
           }
           log.debug("Bash command allowed (path not under root memory-bank/)", { segment: segment.slice(0, 100) })

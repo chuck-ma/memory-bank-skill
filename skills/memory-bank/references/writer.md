@@ -1,32 +1,6 @@
 # Memory Bank 写入规则
 
-> 此文档定义 Memory Bank 的写入规则。主 Agent 直接执行写入，Plugin 注入 writing guideline（advisory）。
-
-## 写入方式
-
-主 Agent 直接使用 `write`/`edit` 工具写入 `memory-bank/` 下的 `.md` 文件：
-
-```typescript
-// 示例：更新 patterns.md
-edit({
-  filePath: "memory-bank/details/patterns.md",
-  oldString: "...",
-  newString: "..."
-})
-
-// 示例：创建新需求文档
-write({
-  filePath: "memory-bank/details/requirements/REQ-007-xxx.md",
-  content: "# REQ-007: ...\n\n..."
-})
-```
-
-**Plugin 保护**：
-- 只允许 `.md` 文件写入（非 `.md` 会被阻止）
-- 不允许通过 bash 写入（必须使用 write/edit 等结构化工具）
-- 写入时 Plugin 自动注入 writing guideline 提示
-
-## 写入触发流程（跨 turn）
+## 写入流程（跨 turn）
 
 ### 触发时机
 
@@ -70,9 +44,9 @@ write({
 
 **混合意图**：如果用户确认同时问了其他问题（如"写吧，顺便问一下..."），先执行写入，再回答问题。
 
-**Step 3: 执行（本 turn 或下一 turn）**
+**Step 3: 执行（下一 turn）**
 
-收到确认后，直接使用 `write`/`edit` 工具写入，然后展示变更预览。
+收到确认后，主 Agent 直接用 write/edit 工具写入目标文件，然后展示变更预览。
 
 ## Refresh 流程（/memory-bank-refresh）
 
@@ -309,15 +283,15 @@ USER_BLOCK 将保持不变。
 
 ---
 
-## 写入流程
+## 写入执行
 
-**Proposal 流程**：主 Agent 提议 → 用户确认 → 主 Agent 直接执行写入。
+**Proposal 流程**：主 Agent 提供 Target + Draft，用户确认后直接执行写入。
 
 | 步骤 | 负责方 | 动作 |
 |------|--------|------|
 | 1 | 主 Agent | 检测写入时机，自然语言询问是否写入 |
 | 2 | 用户 | 自然语言确认（"好"/"写"）或拒绝（"不用"/"跳过"） |
-| 3 | 主 Agent | 直接使用 `write`/`edit` 工具写入目标文件 |
+| 3 | 主 Agent | 直接用 write/edit 工具写入目标 .md 文件 |
 
 ---
 
@@ -336,13 +310,10 @@ USER_BLOCK 将保持不变。
 
 ---
 
-## 守卫机制
+## 写入限制
 
-Plugin 层面强制执行：
-- 主 Agent 直接使用 `write`/`edit` 写入 `memory-bank/`
-- 只允许写入 `.md` 文件（非 `.md` 会被阻止）
-- 不允许通过 bash 写入（必须使用结构化工具）
-- 写入时 Plugin 自动注入 writing guideline 提示
+Plugin 层面：
+- `memory-bank/` 仅允许写入 `.md` 文件，写入其他格式会被阻止
 
 ---
 
@@ -367,6 +338,7 @@ Plugin 层面强制执行：
 - 不要跳过 Glob 检查
 - 不要修改 `memory-bank/` 以外的文件
 - 不要删除文件（除非迁移流程明确要求）
+- 不要未经用户确认直接写入
 
 ---
 
